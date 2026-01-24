@@ -16,7 +16,10 @@ A simple, cross-platform tool for pushing and pulling files to/from remote devic
 - **Compression option** for slow connections
 - **Dry-run mode** to preview transfers
 - Speed testing
-- Automatic SSH key setup
+- **Quiet mode** for script-friendly output
+- **Live progress tracking** for transfers
+- **Detailed statistics** (speed, size, duration)
+- **Graceful interruption** handling
 
 ## Installation
 
@@ -81,6 +84,9 @@ sshp -r mydir/
 # Push with compression (good for slow connections)
 sshp -z largefile.bin
 
+# Quiet mode (summary only, good for scripts)
+sshp -q file.txt
+
 # Preview what would be transferred (dry-run)
 sshp --dry-run file.txt
 
@@ -124,6 +130,7 @@ sshp --verbose file.txt
 | `--list` | `-l` | List remote files |
 | `--test` | `-t` | Test SSH connection |
 | `--speed-test` | `-st` | Test transfer speed |
+| `--quiet` | `-q` | Quiet mode (summary/stats only) |
 | `--config` | `-c` | Show configuration |
 | `--verbose` | `-v` | Verbose output |
 | `--version` | | Show version |
@@ -146,7 +153,8 @@ This means you can set up a global config once and use it everywhere, while stil
   "remote_dir": "~",
   "transfer_method": "rsync",
   "auth_method": "key",
-  "key_path": "~/.ssh/id_rsa"
+  "key_path": "~/.ssh/id_rsa",
+  "quiet_mode": false
 }
 ```
 
@@ -158,6 +166,7 @@ This means you can set up a global config once and use it everywhere, while stil
 - **transfer_method**: `scp` or `rsync` (rsync preferred if available)
 - **auth_method**: `key` or `password`
 - **key_path**: Path to SSH private key
+- **quiet_mode**: Suppress per-file output if true
 
 ## Transfer Methods
 
@@ -226,6 +235,13 @@ bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manag
 - All `sed` and `stat` commands are cross-platform compatible
 
 ## Version History
+
+### Version 3.5.3
+- Added **Quiet Mode** support (`--quiet`, `-q`)
+- Added **transfer statistics** (size, average speed)
+- Added **live progress counter** in quiet mode
+- Added **graceful interruption** handling (Ctrl+C)
+- Improved rsync integration
 
 ### Version 3.5.2
 - Improved **help message** and command organization
