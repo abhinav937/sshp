@@ -236,6 +236,12 @@ bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manag
 
 ## Version History
 
+### Version 3.5.4
+- Added **Real-time speed** display
+- Enhanced **transfer statistics** (total size, avg speed)
+- Improved **Quiet Mode** with live progress counter
+- Better handling of rsync output parsing
+
 ### Version 3.5.3
 - Added **Quiet Mode** support (`--quiet`, `-q`)
 - Added **transfer statistics** (size, average speed)

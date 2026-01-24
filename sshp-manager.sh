@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # SSHp Tool - Unified Manager Script
-# Version: 3.5.3 - Handles install, uninstall, and update operations
+# Version: 3.5.4 - Handles install, uninstall, and update operations
 
 set -e
 
@@ -96,7 +96,7 @@ output_sshp_script() {
 #!/usr/bin/env python3
 """
 SSHp Tool - Self-contained script for pushing files to remote devices
-Version: 3.5.3
+Version: 3.5.4
 
 Features:
 - Push/pull files via SCP or rsync
@@ -1063,7 +1063,7 @@ Examples:
     opt_group.add_argument('--dest', '-d', default='.', help='Destination for pulled files')
     opt_group.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
     opt_group.add_argument('--quiet', '-q', action='store_true', help='Quiet mode (summary only)')
-    opt_group.add_argument('--version', action='version', version='sshp 3.5.3')
+    opt_group.add_argument('--version', action='version', version='sshp 3.5.4')
 
     args = parser.parse_args()
 
@@ -1379,7 +1379,7 @@ confirm_operation() {
             # Get current version for update
             local script_path="$HOME/.local/bin/sshp"
             local current_version="not installed"
-            local new_version="3.5.3"
+            local new_version="3.5.4"
 
             if [[ -f "$script_path" ]]; then
                 current_version=$(grep -o "version='sshp [0-9]\+\.[0-9]\+\.[0-9]\+'" "$script_path" 2>/dev/null | grep -o "[0-9]\+\.[0-9]\+\.[0-9]\+" | head -1)
@@ -1466,13 +1466,11 @@ install_sshp() {
     print_status "To get started, run: sshp --help"
     print_status "To setup SSH configuration, run: sshp --setup"
     echo ""
-    print_status "New features in v3.5.3:"
-    echo "  • Quiet mode support (--quiet, -q)"
-    echo "  • Improved transfer statistics and file counting"
-    echo "  • Graceful Ctrl+C handling with interruption stats"
-    echo "  • Global config fallback (~/.sshp_config.json)"
-    echo "  • Recursive directory support (-r)"
-    echo "  • Rsync support (auto-detected)"
+    print_status "New features in v3.5.4:"
+    echo "  • Real-time transfer speed and size statistics"
+    echo "  • Live progress tracking in quiet mode"
+    echo "  • Graceful interruption with partial transfer stats"
+    echo "  • Improved accuracy for rsync progress parsing"
     echo ""
     print_status "To update later, run:"
     print_status "  bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manager.sh) update"
@@ -1556,7 +1554,7 @@ update_sshp() {
 
     # For same version updates, checksum comparison is already done in confirm_operation
     local current_version=$(get_current_version)
-    local new_version="3.5.3"
+    local new_version="3.5.4"
 
     if [[ "$current_version" == "$new_version" ]]; then
         # If we reach here, user chose to update anyway or code changed
@@ -1572,13 +1570,11 @@ update_sshp() {
     print_status "Your existing configuration has been preserved."
     print_status "To verify the update, run: sshp --version"
     echo ""
-    print_status "What's new in v3.5.3:"
-    echo "  • Quiet mode support (--quiet, -q)"
-    echo "  • Improved transfer statistics and file counting"
-    echo "  • Graceful Ctrl+C handling with interruption stats"
-    echo "  • Global config fallback (~/.sshp_config.json)"
-    echo "  • Recursive directory support (-r)"
-    echo "  • Rsync support (auto-detected)"
+    print_status "What's new in v3.5.4:"
+    echo "  • Real-time transfer speed and size statistics"
+    echo "  • Live progress tracking in quiet mode"
+    echo "  • Graceful interruption with partial transfer stats"
+    echo "  • Improved accuracy for rsync progress parsing"
 }
 
 # Parse command line arguments
