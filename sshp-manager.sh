@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # SSHp Tool - Unified Manager Script
-# Version: 3.5.2 - Handles install, uninstall, and update operations
+# Version: 3.5.3 - Handles install, uninstall, and update operations
 
 set -e
 
@@ -96,7 +96,7 @@ output_sshp_script() {
 #!/usr/bin/env python3
 """
 SSHp Tool - Self-contained script for pushing files to remote devices
-Version: 3.5.2
+Version: 3.5.3
 
 Features:
 - Push/pull files via SCP or rsync
@@ -521,7 +521,9 @@ class SSHpTool:
         
         start_time = time.time()
         files_count = 0
+        total_bytes = 0
         process = None
+        last_update_time = 0
         
         # Heuristics
         is_rsync = "rsync" in cmd[0]
@@ -552,43 +554,106 @@ class SSHpTool:
                 counted = False
                 if is_rsync:
                     # Rsync lists files. Skip meta headers/footers.
-                    # "sending incremental file list"
-                    # "sent 123 bytes"
-                    # "total size is"
                     lower = line_stripped.lower()
-                    if not any(x in lower for x in ["sending incremental", "sent ", "total size", "speedup is", "bytes/sec", "drwx"]):
+                    
+                    # Parse stats line at the end: "sent 1234 bytes  received 45 bytes"
+                    if "sent " in lower and " bytes" in lower and "received " in lower:
+                        try:
+                            # Extract bytes sent/received
+                            # sent 1,234 bytes  received 12 bytes
+                            parts = lower.replace(',', '').split()
+                            sent_idx = parts.index('sent')
+                            sent_bytes = int(parts[sent_idx + 1])
+                            total_bytes = sent_bytes # Approximation for push, mostly correct
+                        except (ValueError, IndexError):
+                            pass
+                    
+                    if not any(x in lower for x in ["sending incremental", "sent ", "total size", "speedup is", "bytes/sec", "drwx", "created directory"]):
                          # Likely a file path
                          files_count += 1
                          counted = True
                 else:
-                    # SCP: Look for progress indicators or percentages if not quiet
+                    # SCP: Look for progress indicators
+                    # filename 100%  37KB   4.6MB/s   00:00
                     if "%" in line:
                         files_count += 1
                         counted = True
+                        # Try to parse size
+                        try:
+                            # Split by whitespace, look for the size (usually 2nd or 3rd element depending on filename)
+                            # Or simple regex: 100% \s+ (size)
+                            match = re.search(r'100%\s+([\d\.]+)([KMGTP]?B)', line)
+                            if match:
+                                val = float(match.group(1))
+                                unit = match.group(2)
+                                mult = 1
+                                if 'K' in unit: mult = 1024
+                                elif 'M' in unit: mult = 1024*1024
+                                elif 'G' in unit: mult = 1024*1024*1024
+                                total_bytes += int(val * mult)
+                        except Exception:
+                            pass
                 
                 # Output handling
                 if not quiet:
                     sys.stdout.write(line)
                     sys.stdout.flush()
+                elif counted:
+                    # In quiet mode, update progress line periodically
+                    current_time = time.time()
+                    if current_time - last_update_time > 0.1:
+                        sys.stdout.write(f"\rTransferred: {files_count} files...")
+                        sys.stdout.flush()
+                        last_update_time = current_time
 
             return_code = process.poll()
+            if quiet:
+                sys.stdout.write("\n") # Newline after progress bar
+                
             duration = time.time() - start_time
-            return return_code == 0, files_count, duration
+            # Avoid division by zero
+            if duration < 0.001: duration = 0.001
+                
+            return return_code == 0, files_count, total_bytes, duration
             
         except KeyboardInterrupt:
             # Handle user interruption
             if process:
                 process.terminate()
-                # Give it a moment to die gracefully
                 try:
                     process.wait(timeout=0.5)
                 except subprocess.TimeoutExpired:
                     process.kill()
             
+            if quiet:
+                sys.stdout.write("\n")
+                
             duration = time.time() - start_time
-            print("\n\nOperation cancelled by user.")
-            print(f"Stats: Transferred {files_count}/{expected_total} files (approx) in {duration:.2f}s")
-            return False, files_count, duration
+            if duration < 0.001: duration = 0.001
+            
+            print("\nOperation cancelled by user.")
+            
+            # Helper to format size
+            def fmt_size(b):
+                if b < 1024: return f"{b} B"
+                if b < 1024*1024: return f"{b/1024:.1f} KB"
+                return f"{b/(1024*1024):.1f} MB"
+            
+            # Helper to format speed
+            def fmt_speed(b, t):
+                s = b / t
+                if s < 1024: return f"{s:.1f} B/s"
+                if s < 1024*1024: return f"{s/1024:.1f} KB/s"
+                return f"{s/(1024*1024):.1f} MB/s"
+
+            stats_msg = f"Stats: Transferred {files_count} files"
+            if total_bytes > 0:
+                stats_msg += f" ({fmt_size(total_bytes)}) at {fmt_speed(total_bytes, duration)}"
+            stats_msg += f" in {duration:.2f}s"
+            
+            print(stats_msg)
+                 
+            return False, files_count, total_bytes, duration
 
     def list_remote_files(self):
         """List files in remote directory"""
@@ -632,7 +697,8 @@ class SSHpTool:
     def _build_rsync_cmd(self, compress=False, verbose=False, dry_run=False):
         """Build rsync command with options"""
         # Always use -v so we can track files in our wrapper, check quiet mode at output level
-        rsync_cmd = ["rsync", "-a", "-v"]
+        # Add --stats to get final transfer statistics
+        rsync_cmd = ["rsync", "-a", "-v", "--stats"]
         
         if not self.config.get('quiet_mode', False):
             rsync_cmd.append("--progress")
@@ -703,13 +769,31 @@ class SSHpTool:
                 print(f"Running: {' '.join(cmd)}")
 
             quiet = self.config.get('quiet_mode', False)
-            success, count, duration = self.run_with_progress(cmd, len(valid_files), quiet=quiet, dry_run=dry_run)
+            success, count, bytes_xfer, duration = self.run_with_progress(cmd, len(valid_files), quiet=quiet, dry_run=dry_run)
 
             if success:
                 if dry_run:
                     print("[DRY RUN] Transfer simulation complete!")
                 else:
-                    print(f"Files pushed successfully! ({count}/{len(valid_files)} files in {duration:.2f}s)")
+                    # Format size/speed
+                    size_str = ""
+                    speed_str = ""
+                    if bytes_xfer > 0:
+                        if bytes_xfer < 1024*1024:
+                            size_str = f"({bytes_xfer/1024:.1f} KB)"
+                        else:
+                            size_str = f"({bytes_xfer/(1024*1024):.1f} MB)"
+                        
+                        speed = bytes_xfer / duration if duration > 0 else 0
+                        if speed < 1024*1024:
+                            speed_str = f"at {speed/1024:.1f} KB/s"
+                        else:
+                            speed_str = f"at {speed/(1024*1024):.1f} MB/s"
+
+                    if len(valid_files) > 1 and count <= len(valid_files):
+                         print(f"Files pushed successfully! ({count}/{len(valid_files)} files {size_str} {speed_str}in {duration:.2f}s)")
+                    else:
+                         print(f"Files pushed successfully! ({count} files {size_str} {speed_str}in {duration:.2f}s)")
                 return True
             else:
                 if not isinstance(success, bool): # In case we want to differentiate signal
@@ -760,13 +844,31 @@ class SSHpTool:
                 print(f"Running: {' '.join(cmd)}")
 
             quiet = self.config.get('quiet_mode', False)
-            success, count, duration = self.run_with_progress(cmd, len(remote_files), quiet=quiet, dry_run=dry_run)
+            success, count, bytes_xfer, duration = self.run_with_progress(cmd, len(remote_files), quiet=quiet, dry_run=dry_run)
 
             if success:
                 if dry_run:
                     print("[DRY RUN] Transfer simulation complete!")
                 else:
-                    print(f"Files pulled successfully! ({count}/{len(remote_files)} files in {duration:.2f}s)")
+                    # Format size/speed
+                    size_str = ""
+                    speed_str = ""
+                    if bytes_xfer > 0:
+                        if bytes_xfer < 1024*1024:
+                            size_str = f"({bytes_xfer/1024:.1f} KB)"
+                        else:
+                            size_str = f"({bytes_xfer/(1024*1024):.1f} MB)"
+                        
+                        speed = bytes_xfer / duration if duration > 0 else 0
+                        if speed < 1024*1024:
+                            speed_str = f"at {speed/1024:.1f} KB/s"
+                        else:
+                            speed_str = f"at {speed/(1024*1024):.1f} MB/s"
+
+                    if len(remote_files) > 1 and count <= len(remote_files):
+                         print(f"Files pulled successfully! ({count}/{len(remote_files)} files {size_str} {speed_str}in {duration:.2f}s)")
+                    else:
+                         print(f"Files pulled successfully! ({count} files {size_str} {speed_str}in {duration:.2f}s)")
                 return True
             else:
                  # run_with_progress handles interruption msgs
@@ -948,7 +1050,7 @@ Examples:
     opt_group.add_argument('--dest', '-d', default='.', help='Destination for pulled files')
     opt_group.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
     opt_group.add_argument('--quiet', '-q', action='store_true', help='Quiet mode (summary only)')
-    opt_group.add_argument('--version', action='version', version='sshp 3.5.2')
+    opt_group.add_argument('--version', action='version', version='sshp 3.5.3')
 
     args = parser.parse_args()
 
@@ -1264,7 +1366,7 @@ confirm_operation() {
             # Get current version for update
             local script_path="$HOME/.local/bin/sshp"
             local current_version="not installed"
-            local new_version="3.5.2"
+            local new_version="3.5.3"
 
             if [[ -f "$script_path" ]]; then
                 current_version=$(grep -o "version='sshp [0-9]\+\.[0-9]\+\.[0-9]\+'" "$script_path" 2>/dev/null | grep -o "[0-9]\+\.[0-9]\+\.[0-9]\+" | head -1)
@@ -1351,13 +1453,12 @@ install_sshp() {
     print_status "To get started, run: sshp --help"
     print_status "To setup SSH configuration, run: sshp --setup"
     echo ""
-    print_status "New features in v3.5.2:"
-    echo "  • Improved help message and command organization"
+    print_status "New features in v3.5.3:"
+    echo "  • Quiet mode support (--quiet, -q)"
+    echo "  • Improved transfer statistics and file counting"
+    echo "  • Graceful Ctrl+C handling with interruption stats"
     echo "  • Global config fallback (~/.sshp_config.json)"
-    echo "  • Pull files from remote (--pull)"
     echo "  • Recursive directory support (-r)"
-    echo "  • Compression option (-z)"
-    echo "  • Dry-run mode (-n)"
     echo "  • Rsync support (auto-detected)"
     echo ""
     print_status "To update later, run:"
@@ -1442,7 +1543,7 @@ update_sshp() {
 
     # For same version updates, checksum comparison is already done in confirm_operation
     local current_version=$(get_current_version)
-    local new_version="3.5.2"
+    local new_version="3.5.3"
 
     if [[ "$current_version" == "$new_version" ]]; then
         # If we reach here, user chose to update anyway or code changed
@@ -1458,15 +1559,13 @@ update_sshp() {
     print_status "Your existing configuration has been preserved."
     print_status "To verify the update, run: sshp --version"
     echo ""
-    print_status "What's new in v3.5.2:"
-    echo "  • Improved help message and command organization"
+    print_status "What's new in v3.5.3:"
+    echo "  • Quiet mode support (--quiet, -q)"
+    echo "  • Improved transfer statistics and file counting"
+    echo "  • Graceful Ctrl+C handling with interruption stats"
     echo "  • Global config fallback (~/.sshp_config.json)"
-    echo "  • Pull files from remote (--pull)"
     echo "  • Recursive directory support (-r)"
-    echo "  • Compression option (-z)"
-    echo "  • Dry-run mode (-n)"
     echo "  • Rsync support (auto-detected)"
-    echo "  • Improved macOS/FreeBSD compatibility"
 }
 
 # Parse command line arguments
