@@ -236,6 +236,10 @@ bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manag
 
 ## Version History
 
+### Version 3.5.5
+- Added **compression status feedback** ("(compressed)" indicator)
+- Detailed user feedback for active options
+
 ### Version 3.5.4
 - Added **Real-time speed** display
 - Enhanced **transfer statistics** (total size, avg speed)
