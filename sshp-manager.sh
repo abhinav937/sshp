@@ -547,76 +547,97 @@ class SSHpTool:
                 if not line:
                     continue
                     
+                # Error detection
+                is_error = False
+                lower_line = line.lower()
+                error_indicators = [
+                    "error:", "warning:", "failed", "fatal", 
+                    "ssh:", "rsync:", "scp:",
+                    "no route to host", "connection refused", "connection timed out",
+                    "permission denied", "lost connection", "broken pipe"
+                ]
+                
+                if any(err in lower_line for err in error_indicators):
+                    is_error = True
+                    # Always print errors, even in quiet mode
+                    if quiet:
+                        # Clear progress line if needed
+                        sys.stdout.write("\r" + " " * 50 + "\r")
+                        sys.stdout.flush()
+                    
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                    
                 # Counting logic
                 line_stripped = line.strip()
                 if not line_stripped:
                     continue
                     
                 counted = False
-                if is_rsync:
-                    # Rsync lists files. Skip meta headers/footers.
-                    lower = line_stripped.lower()
-                    
-                    # Parse stats line at the end: "sent 1234 bytes  received 45 bytes"
-                    if "sent " in lower and " bytes" in lower and "received " in lower:
-                        try:
-                            parts = lower.replace(',', '').split()
-                            sent_idx = parts.index('sent')
-                            sent_bytes = int(parts[sent_idx + 1])
-                            total_bytes = sent_bytes 
-                        except (ValueError, IndexError):
-                            pass
+                # Don't count known errors or non-file output
+                if not is_error and not "warning" in lower_line:
+                    if is_rsync:
+                        # Rsync lists files. Skip meta headers/footers.
+                        # Parse stats line at the end: "sent 1234 bytes  received 45 bytes"
+                        if "sent " in lower_line and " bytes" in lower_line and "received " in lower_line:
+                            try:
+                                parts = lower_line.replace(',', '').split()
+                                sent_idx = parts.index('sent')
+                                sent_bytes = int(parts[sent_idx + 1])
+                                total_bytes = sent_bytes 
+                            except (ValueError, IndexError):
+                                pass
 
-                    # Parse progress speed: "4.00MB/s"
-                    # Pattern: match number + unit + /s
-                    speed_match = re.search(r'\s+([\d\.]+[KMGTP]?B/s)', line)
-                    if speed_match:
-                        current_speed = speed_match.group(1)
-
-                    # Filter out progress output and headers from file counting
-                    if not any(x in lower for x in ["sending incremental", "sent ", "total size", "speedup is", "bytes/sec", "drwx", "created directory", "%"]):
-                         # Likely a file path if not a progress line
-                         # Progress lines often imply % or /s, handled above.
-                         # Need strict check to avoid counting progress strings as files
-                         if not speed_match:
-                             files_count += 1
-                             counted = True
-                else:
-                    # SCP: Look for progress indicators
-                    # filename 100%  37KB   4.6MB/s   00:00
-                    if "%" in line:
-                        files_count += 1
-                        counted = True
-                        
-                        # Try to parse speed
+                        # Parse progress speed: "4.00MB/s"
+                        # Pattern: match number + unit + /s
                         speed_match = re.search(r'\s+([\d\.]+[KMGTP]?B/s)', line)
                         if speed_match:
                             current_speed = speed_match.group(1)
 
-                        # Try to parse size
-                        try:
-                            match = re.search(r'100%\s+([\d\.]+)([KMGTP]?B)', line)
-                            if match:
-                                val = float(match.group(1))
-                                unit = match.group(2)
-                                mult = 1
-                                if 'K' in unit: mult = 1024
-                                elif 'M' in unit: mult = 1024*1024
-                                elif 'G' in unit: mult = 1024*1024*1024
-                                total_bytes += int(val * mult)
-                        except Exception:
-                            pass
+                        # Filter out progress output and headers from file counting
+                        if not any(x in lower_line for x in ["sending incremental", "sent ", "total size", "speedup is", "bytes/sec", "drwx", "created directory", "%"]):
+                             # Likely a file path if not a progress line
+                             if not speed_match:
+                                 files_count += 1
+                                 counted = True
+                    else:
+                        # SCP: Look for progress indicators
+                        # filename 100%  37KB   4.6MB/s   00:00
+                        if "%" in line:
+                            files_count += 1
+                            counted = True
+                            
+                            # Try to parse speed
+                            speed_match = re.search(r'\s+([\d\.]+[KMGTP]?B/s)', line)
+                            if speed_match:
+                                current_speed = speed_match.group(1)
+
+                            # Try to parse size
+                            try:
+                                match = re.search(r'100%\s+([\d\.]+)([KMGTP]?B)', line)
+                                if match:
+                                    val = float(match.group(1))
+                                    unit = match.group(2)
+                                    mult = 1
+                                    if 'K' in unit: mult = 1024
+                                    elif 'M' in unit: mult = 1024*1024
+                                    elif 'G' in unit: mult = 1024*1024*1024
+                                    total_bytes += int(val * mult)
+                            except Exception:
+                                pass
                 
-                # Output handling
-                if not quiet:
+                # Output handling (normal output)
+                if not quiet and not is_error:
                     sys.stdout.write(line)
                     sys.stdout.flush()
-                elif counted or (current_speed and time.time() - last_update_time > 0.2):
+                elif (counted or (current_speed and time.time() - last_update_time > 0.2)) and not is_error:
                     # In quiet mode, update progress line periodically or on file count
                     current_time = time.time()
                     if current_time - last_update_time > 0.1:
                         speed_str = f" ({current_speed})" if current_speed else ""
-                        sys.stdout.write(f"\rTransferred: {files_count} files{speed_str}...")
+                        # Pad with spaces to overwrite previous longer lines
+                        msg = f"\rTransferred: {files_count} files{speed_str}..."
+                        sys.stdout.write(f"{msg:<50}")
                         sys.stdout.flush()
                         last_update_time = current_time
 
