@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SSH Push Tool - Unified Manager Script
+# SSHp Tool - Unified Manager Script
 # Version: 3.5.1 - Handles install, uninstall, and update operations
 
 set -e
@@ -62,14 +62,14 @@ get_file_date() {
 
 # Function to show help
 show_help() {
-    echo "SSH Push Tool - Unified Manager"
+    echo "SSHp Tool - Unified Manager"
     echo ""
     echo "Usage: $0 [COMMAND] [OPTIONS]"
     echo ""
     echo "Commands:"
-    echo "  install, i     Install SSH Push tool"
-    echo "  uninstall, u   Uninstall SSH Push tool"
-    echo "  update, up     Update SSH Push tool"
+    echo "  install, i     Install SSHp tool"
+    echo "  uninstall, u   Uninstall SSHp tool"
+    echo "  update, up     Update SSHp tool"
     echo "  status, s      Show installation status"
     echo "  help, h        Show this help message"
     echo ""
@@ -78,24 +78,24 @@ show_help() {
     echo "  --keep-config  Keep SSH configuration files (uninstall only)"
     echo ""
     echo "Examples:"
-    echo "  $0 install                    # Install SSH Push tool"
-    echo "  $0 update                     # Update SSH Push tool"
-    echo "  $0 uninstall                  # Uninstall SSH Push tool"
+    echo "  $0 install                    # Install SSHp tool"
+    echo "  $0 update                     # Update SSHp tool"
+    echo "  $0 uninstall                  # Uninstall SSHp tool"
     echo "  $0 install --force            # Force install without prompts"
     echo "  $0 uninstall --keep-config   # Uninstall but keep SSH config"
     echo ""
     echo "One-line commands:"
-    echo "  bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-push-manager.sh) install"
-    echo "  bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-push-manager.sh) update"
-    echo "  bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-push-manager.sh) uninstall"
+    echo "  bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manager.sh) install"
+    echo "  bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manager.sh) update"
+    echo "  bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manager.sh) uninstall"
 }
 
-# Function to output the ssh-push script content
-output_ssh_push_script() {
+# Function to output the sshp script content
+output_sshp_script() {
     cat << 'EOF'
 #!/usr/bin/env python3
 """
-SSH Push Tool - Self-contained script for pushing files to remote devices
+SSHp Tool - Self-contained script for pushing files to remote devices
 Version: 3.5.1
 
 Features:
@@ -150,10 +150,10 @@ def validate_path(path):
     return True, ""
 
 
-class SSHPushTool:
+class SSHpTool:
     def __init__(self):
-        self.local_config_file = ".ssh_push_config.json"
-        self.global_config_file = os.path.expanduser("~/.ssh_push_config.json")
+        self.local_config_file = ".sshp_config.json"
+        self.global_config_file = os.path.expanduser("~/.sshp_config.json")
         self.config, self.config_source = self.load_config()
         self.has_rsync = shutil.which('rsync') is not None
         # Flags for forcing global/local setup
@@ -273,7 +273,7 @@ class SSHPushTool:
 
     def setup_config(self):
         """Interactive setup of SSH configuration"""
-        print("SSH Push Tool Configuration Setup")
+        print("SSHp Tool Configuration Setup")
         print("==================================")
 
         config = {}
@@ -791,30 +791,30 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ssh-push --setup                    # Setup SSH configuration (asks local/global)
-  ssh-push --global-setup             # Setup global config (~/.ssh_push_config.json)
-  ssh-push --local-setup              # Setup local config (./.ssh_push_config.json)
-  ssh-push --edit                     # Edit existing configuration
-  ssh-push blinky.v                   # Push single file
-  ssh-push file1.v file2.v            # Push multiple files
-  ssh-push --all                      # Push all non-hidden files
-  ssh-push -r mydir/                  # Push directory recursively
-  ssh-push --pull remote.txt          # Pull file from remote
-  ssh-push --pull -r logs/            # Pull directory recursively
-  ssh-push --list                     # List remote files
-  ssh-push --test                     # Test SSH connection
-  ssh-push --speed-test               # Test file transfer speed
-  ssh-push --dry-run file.txt         # Preview transfer without executing
-  ssh-push -z file.txt                # Push with compression
-  ssh-push --config                   # Show configuration
-  ssh-push --verbose blinky.v         # Push with verbose output
+  sshp --setup                    # Setup SSH configuration (asks local/global)
+  sshp --global-setup             # Setup global config (~/.sshp_config.json)
+  sshp --local-setup              # Setup local config (./.sshp_config.json)
+  sshp --edit                     # Edit existing configuration
+  sshp blinky.v                   # Push single file
+  sshp file1.v file2.v            # Push multiple files
+  sshp --all                      # Push all non-hidden files
+  sshp -r mydir/                  # Push directory recursively
+  sshp --pull remote.txt          # Pull file from remote
+  sshp --pull -r logs/            # Pull directory recursively
+  sshp --list                     # List remote files
+  sshp --test                     # Test SSH connection
+  sshp --speed-test               # Test file transfer speed
+  sshp --dry-run file.txt         # Preview transfer without executing
+  sshp -z file.txt                # Push with compression
+  sshp --config                   # Show configuration
+  sshp --verbose blinky.v         # Push with verbose output
         """
     )
 
     parser.add_argument('files', nargs='*', help='Files to push/pull')
     parser.add_argument('--setup', '-s', action='store_true', help='Setup SSH configuration (asks local/global)')
-    parser.add_argument('--global-setup', '-gs', action='store_true', help='Setup global SSH configuration (~/.ssh_push_config.json)')
-    parser.add_argument('--local-setup', '-ls', action='store_true', help='Setup local SSH configuration (./.ssh_push_config.json)')
+    parser.add_argument('--global-setup', '-gs', action='store_true', help='Setup global SSH configuration (~/.sshp_config.json)')
+    parser.add_argument('--local-setup', '-ls', action='store_true', help='Setup local SSH configuration (./.sshp_config.json)')
     parser.add_argument('--edit', '-e', action='store_true', help='Edit existing SSH configuration')
     parser.add_argument('--all', '-a', action='store_true', help='Push all non-hidden files in current directory')
     parser.add_argument('--list', '-l', action='store_true', help='List files in remote working directory')
@@ -822,7 +822,7 @@ Examples:
     parser.add_argument('--speed-test', '-st', action='store_true', help='Test file transfer speed with a test file')
     parser.add_argument('--config', '-c', action='store_true', help='Show current configuration')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
-    parser.add_argument('--version', action='version', version='ssh-push 3.5.1')
+    parser.add_argument('--version', action='version', version='sshp 3.5.1')
 
     # New options
     parser.add_argument('--pull', '-p', action='store_true', help='Pull files from remote instead of pushing')
@@ -833,7 +833,7 @@ Examples:
 
     args = parser.parse_args()
 
-    tool = SSHPushTool()
+    tool = SSHpTool()
 
     # Handle different commands
     if args.global_setup:
@@ -873,25 +873,25 @@ if __name__ == "__main__":
 EOF
 }
 
-# Function to create the self-contained ssh-push script
-create_ssh_push_script() {
+# Function to create the self-contained sshp script
+create_sshp_script() {
     local install_dir="$HOME/.local/bin"
-    local script_path="$install_dir/ssh-push"
+    local script_path="$install_dir/sshp"
 
-    print_status "Creating self-contained SSH Push script..." >&2
+    print_status "Creating self-contained SSHp script..." >&2
 
     # Create the installation directory
     mkdir -p "$install_dir"
 
     # Create the self-contained script
-    if ! output_ssh_push_script > "$script_path"; then
-        print_error "Failed to create SSH Push script"
+    if ! output_sshp_script > "$script_path"; then
+        print_error "Failed to create SSHp script"
         return 1
     fi
 
     # Make the script executable
     if ! chmod +x "$script_path"; then
-        print_error "Failed to make SSH Push script executable"
+        print_error "Failed to make SSHp script executable"
         return 1
     fi
 
@@ -901,7 +901,7 @@ create_ssh_push_script() {
         return 1
     fi
 
-    print_success "SSH Push script created at $script_path" >&2
+    print_success "SSHp script created at $script_path" >&2
 
     echo "$script_path"
 }
@@ -924,36 +924,36 @@ setup_shell_alias() {
     touch "$shell_rc"
 
     # Remove existing alias if present (cross-platform)
-    if grep -q "alias ssh-push=" "$shell_rc" 2>/dev/null; then
+    if grep -q "alias sshp=" "$shell_rc" 2>/dev/null; then
         # Create backup
         cp "$shell_rc" "$shell_rc.bak"
-        grep -v "# SSH Push Tool alias" "$shell_rc.bak" | grep -v "alias ssh-push=" > "$shell_rc"
-        print_status "Removed existing ssh-push alias" >&2
+        grep -v "# SSHp Tool alias" "$shell_rc.bak" | grep -v "alias sshp=" > "$shell_rc"
+        print_status "Removed existing sshp alias" >&2
     fi
 
     # Add new alias with proper quoting
     echo "" >> "$shell_rc"
-    echo "# SSH Push Tool alias" >> "$shell_rc"
-    echo "alias ssh-push=\"$script_path\"" >> "$shell_rc"
+    echo "# SSHp Tool alias" >> "$shell_rc"
+    echo "alias sshp=\"$script_path\"" >> "$shell_rc"
 
-    print_success "SSH Push alias added to $shell_rc" >&2
+    print_success "SSHp alias added to $shell_rc" >&2
 }
 
-# Function to remove SSH Push tool
-remove_ssh_push_tool() {
-    print_status "Removing SSH Push tool..."
+# Function to remove SSHp tool
+remove_sshp_tool() {
+    print_status "Removing SSHp tool..."
 
-    local script_path="$HOME/.local/bin/ssh-push"
+    local script_path="$HOME/.local/bin/sshp"
 
     if [[ -f "$script_path" ]]; then
         if rm "$script_path"; then
-            print_success "SSH Push tool removed from $script_path"
+            print_success "SSHp tool removed from $script_path"
         else
-            print_error "Failed to remove SSH Push tool"
+            print_error "Failed to remove SSHp tool"
             return 1
         fi
     else
-        print_warning "SSH Push tool not found at $script_path"
+        print_warning "SSHp tool not found at $script_path"
     fi
 
     # Remove the ~/.local/bin directory if it's empty
@@ -965,7 +965,7 @@ remove_ssh_push_tool() {
 
 # Function to remove shell alias
 remove_shell_alias() {
-    print_status "Removing SSH Push command alias..."
+    print_status "Removing SSHp command alias..."
 
     # Determine shell configuration file
     local shell_rc=""
@@ -976,20 +976,20 @@ remove_shell_alias() {
     fi
 
     if [[ -f "$shell_rc" ]]; then
-        # Remove ssh-push alias lines
-        if grep -q "alias ssh-push=" "$shell_rc"; then
+        # Remove sshp alias lines
+        if grep -q "alias sshp=" "$shell_rc"; then
             # Create backup
             local backup_file="$shell_rc.backup.$(date +%Y%m%d_%H%M%S)"
             cp "$shell_rc" "$backup_file"
 
             # Remove alias lines (cross-platform using grep)
-            grep -v "# SSH Push Tool alias" "$shell_rc" | grep -v "alias ssh-push=" > "$shell_rc.tmp"
+            grep -v "# SSHp Tool alias" "$shell_rc" | grep -v "alias sshp=" > "$shell_rc.tmp"
             mv "$shell_rc.tmp" "$shell_rc"
 
-            print_success "SSH Push alias removed from $shell_rc"
+            print_success "SSHp alias removed from $shell_rc"
             print_status "Backup created: $backup_file"
         else
-            print_warning "SSH Push alias not found in $shell_rc"
+            print_warning "SSHp alias not found in $shell_rc"
         fi
     else
         print_warning "Shell configuration file not found: $shell_rc"
@@ -1006,7 +1006,7 @@ remove_ssh_config_files() {
     print_status "Removing SSH configuration files..."
 
     # Remove SSH configuration file
-    local ssh_config=".ssh_push_config.json"
+    local ssh_config=".sshp_config.json"
     if [[ -f "$ssh_config" ]]; then
         if rm "$ssh_config"; then
             print_success "SSH configuration file removed: $ssh_config"
@@ -1018,7 +1018,7 @@ remove_ssh_config_files() {
     fi
 
     # Remove SSH configuration file from home directory (if it exists there)
-    local home_ssh_config="$HOME/.ssh_push_config.json"
+    local home_ssh_config="$HOME/.sshp_config.json"
     if [[ -f "$home_ssh_config" ]]; then
         if rm "$home_ssh_config"; then
             print_success "SSH configuration file removed from home: $home_ssh_config"
@@ -1030,9 +1030,9 @@ remove_ssh_config_files() {
 
 # Function to check installation status
 check_installation_status() {
-    print_status "Checking SSH Push tool installation status..."
+    print_status "Checking SSHp tool installation status..."
 
-    local script_path="$HOME/.local/bin/ssh-push"
+    local script_path="$HOME/.local/bin/sshp"
     local shell_rc=""
 
     if [[ "$SHELL" == *"zsh"* ]]; then
@@ -1048,16 +1048,16 @@ check_installation_status() {
 
     # Check if script exists
     if [[ -f "$script_path" ]]; then
-        print_success "✓ SSH Push script found at: $script_path"
+        print_success "✓ SSHp script found at: $script_path"
     else
-        print_warning "✗ SSH Push script not found at: $script_path"
+        print_warning "✗ SSHp script not found at: $script_path"
     fi
 
     # Check if script is executable
     if [[ -x "$script_path" ]]; then
-        print_success "✓ SSH Push script is executable"
+        print_success "✓ SSHp script is executable"
     else
-        print_warning "✗ SSH Push script is not executable"
+        print_warning "✗ SSHp script is not executable"
     fi
 
     # Check current version
@@ -1075,17 +1075,17 @@ check_installation_status() {
     fi
 
     # Check if alias exists
-    if [[ -f "$shell_rc" ]] && grep -q "alias ssh-push=" "$shell_rc"; then
-        print_success "✓ SSH Push alias found in: $shell_rc"
+    if [[ -f "$shell_rc" ]] && grep -q "alias sshp=" "$shell_rc"; then
+        print_success "✓ SSHp alias found in: $shell_rc"
     else
-        print_status "ℹ SSH Push alias not found in: $shell_rc (not required if binary is in PATH)"
+        print_status "ℹ SSHp alias not found in: $shell_rc (not required if binary is in PATH)"
     fi
 
     # Check if command is accessible
-    if command -v ssh-push &> /dev/null; then
-        print_success "✓ ssh-push command is accessible"
+    if command -v sshp &> /dev/null; then
+        print_success "✓ sshp command is accessible"
     else
-        print_warning "✗ ssh-push command is not accessible"
+        print_warning "✗ sshp command is not accessible"
     fi
 
     # Check for rsync
@@ -1096,7 +1096,7 @@ check_installation_status() {
     fi
 
     # Check for configuration files
-    local config_files=(".ssh_push_config.json" "$HOME/.ssh_push_config.json")
+    local config_files=(".sshp_config.json" "$HOME/.sshp_config.json")
     local config_found=false
 
     for config_file in "${config_files[@]}"; do
@@ -1121,13 +1121,13 @@ confirm_operation() {
 
     case "$operation" in
         "Install")
-            echo "SSH Push Tool - Install"
+            echo "SSHp Tool - Install"
             echo "======================="
             echo "Install to ~/.local/bin/ and add shell alias"
             echo "Detected OS: $OS_TYPE"
             ;;
         "Uninstall")
-            echo "SSH Push Tool - Uninstall"
+            echo "SSHp Tool - Uninstall"
             echo "========================="
             echo "Remove tool, alias"
             if [[ "$KEEP_CONFIG" != "true" ]]; then
@@ -1136,18 +1136,18 @@ confirm_operation() {
             ;;
         "Update")
             # Get current version for update
-            local script_path="$HOME/.local/bin/ssh-push"
+            local script_path="$HOME/.local/bin/sshp"
             local current_version="not installed"
             local new_version="3.5.1"
 
             if [[ -f "$script_path" ]]; then
-                current_version=$(grep -o "version='ssh-push [0-9]\+\.[0-9]\+\.[0-9]\+'" "$script_path" 2>/dev/null | grep -o "[0-9]\+\.[0-9]\+\.[0-9]\+" | head -1)
+                current_version=$(grep -o "version='sshp [0-9]\+\.[0-9]\+\.[0-9]\+'" "$script_path" 2>/dev/null | grep -o "[0-9]\+\.[0-9]\+\.[0-9]\+" | head -1)
                 if [[ -z "$current_version" ]]; then
                     current_version="unknown"
                 fi
             fi
 
-            echo "SSH Push Tool - Update"
+            echo "SSHp Tool - Update"
             echo "======================"
             echo "Current: $current_version"
             echo "New:     $new_version"
@@ -1165,7 +1165,7 @@ confirm_operation() {
 
                 # Create temporary new script to compare
                 local temp_script=$(mktemp)
-                output_ssh_push_script > "$temp_script" 2>/dev/null
+                output_sshp_script > "$temp_script" 2>/dev/null
                 local new_checksum=$(get_script_checksum "$temp_script")
                 local new_size=$(get_file_size "$temp_script")
                 rm -f "$temp_script"
@@ -1208,25 +1208,25 @@ confirm_operation() {
     fi
 }
 
-# Function to install SSH Push tool
-install_ssh_push() {
-    print_status "Installing SSH Push tool..."
+# Function to install SSHp tool
+install_sshp() {
+    print_status "Installing SSHp tool..."
 
     # Create the self-contained script
-    local script_path=$(create_ssh_push_script)
+    local script_path=$(create_sshp_script)
 
     # Setup shell alias
     setup_shell_alias "$script_path"
 
     # Show completion message
     echo ""
-    print_success "SSH Push tool has been installed successfully!"
-    print_status "You can now use 'ssh-push' command from anywhere"
-    print_status "To get started, run: ssh-push --help"
-    print_status "To setup SSH configuration, run: ssh-push --setup"
+    print_success "SSHp tool has been installed successfully!"
+    print_status "You can now use 'sshp' command from anywhere"
+    print_status "To get started, run: sshp --help"
+    print_status "To setup SSH configuration, run: sshp --setup"
     echo ""
     print_status "New features in v3.5.1:"
-    echo "  • Global config fallback (~/.ssh_push_config.json)"
+    echo "  • Global config fallback (~/.sshp_config.json)"
     echo "  • Pull files from remote (--pull)"
     echo "  • Recursive directory support (-r)"
     echo "  • Compression option (-z)"
@@ -1234,15 +1234,15 @@ install_ssh_push() {
     echo "  • Rsync support (auto-detected)"
     echo ""
     print_status "To update later, run:"
-    print_status "  bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-push-manager.sh) update"
+    print_status "  bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manager.sh) update"
 }
 
-# function to uninstall SSH Push tool
-uninstall_ssh_push() {
-    print_status "Uninstalling SSH Push tool..."
+# function to uninstall SSHp tool
+uninstall_sshp() {
+    print_status "Uninstalling SSHp tool..."
 
-    # Remove SSH Push tool
-    remove_ssh_push_tool
+    # Remove SSHp tool
+    remove_sshp_tool
 
     # Remove shell alias
     remove_shell_alias
@@ -1252,9 +1252,9 @@ uninstall_ssh_push() {
 
     # Show uninstallation summary
     echo ""
-    print_success "SSH Push tool has been uninstalled"
+    print_success "SSHp tool has been uninstalled"
     print_status "The following components were removed:"
-    echo "  • SSH Push tool executable"
+    echo "  • SSHp tool executable"
     echo "  • Shell alias"
 
     if [[ "$KEEP_CONFIG" != "true" ]]; then
@@ -1262,18 +1262,18 @@ uninstall_ssh_push() {
     fi
 
     echo ""
-    print_status "If you want to reinstall SSH Push tool, run:"
-    print_status "  bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-push-manager.sh) install"
+    print_status "If you want to reinstall SSHp tool, run:"
+    print_status "  bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manager.sh) install"
     echo ""
     print_status "Note: You may need to restart your terminal for all changes to take effect"
 }
 
 # Function to get current version
 get_current_version() {
-    local script_path="$HOME/.local/bin/ssh-push"
+    local script_path="$HOME/.local/bin/sshp"
     if [[ -f "$script_path" ]]; then
         # Extract version from the script
-        local version=$(grep -o "version='ssh-push [0-9]\+\.[0-9]\+\.[0-9]\+'" "$script_path" 2>/dev/null | grep -o "[0-9]\+\.[0-9]\+\.[0-9]\+" | head -1)
+        local version=$(grep -o "version='sshp [0-9]\+\.[0-9]\+\.[0-9]\+'" "$script_path" 2>/dev/null | grep -o "[0-9]\+\.[0-9]\+\.[0-9]\+" | head -1)
         if [[ -n "$version" ]]; then
             echo "$version"
         else
@@ -1301,15 +1301,15 @@ get_script_checksum() {
     fi
 }
 
-# Function to update SSH Push tool
-update_ssh_push() {
-    print_status "Updating SSH Push tool..."
+# Function to update SSHp tool
+update_sshp() {
+    print_status "Updating SSHp tool..."
 
     # Check if tool is currently installed
-    local script_path="$HOME/.local/bin/ssh-push"
+    local script_path="$HOME/.local/bin/sshp"
     if [[ ! -f "$script_path" ]]; then
-        print_warning "SSH Push tool is not installed. Installing instead..."
-        install_ssh_push
+        print_warning "SSHp tool is not installed. Installing instead..."
+        install_sshp
         return
     fi
 
@@ -1323,16 +1323,16 @@ update_ssh_push() {
     fi
 
     # Create the updated self-contained script
-    local new_script_path=$(create_ssh_push_script)
+    local new_script_path=$(create_sshp_script)
 
     # Show completion message
     echo ""
-    print_success "SSH Push tool has been updated successfully!"
+    print_success "SSHp tool has been updated successfully!"
     print_status "Your existing configuration has been preserved."
-    print_status "To verify the update, run: ssh-push --version"
+    print_status "To verify the update, run: sshp --version"
     echo ""
     print_status "What's new in v3.5.1:"
-    echo "  • Global config fallback (~/.ssh_push_config.json)"
+    echo "  • Global config fallback (~/.sshp_config.json)"
     echo "  • Pull files from remote (--pull)"
     echo "  • Recursive directory support (-r)"
     echo "  • Compression option (-z)"
@@ -1388,15 +1388,15 @@ done
 case "$COMMAND" in
     install)
         confirm_operation "Install"
-        install_ssh_push
+        install_sshp
         ;;
     uninstall)
         confirm_operation "Uninstall"
-        uninstall_ssh_push
+        uninstall_sshp
         ;;
     update)
         confirm_operation "Update"
-        update_ssh_push
+        update_sshp
         ;;
     status)
         check_installation_status

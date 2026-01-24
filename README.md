@@ -1,4 +1,4 @@
-# SSH Push Tool
+# SSHp Tool
 
 A simple, cross-platform tool for pushing and pulling files to/from remote devices via SSH.
 
@@ -21,92 +21,92 @@ A simple, cross-platform tool for pushing and pulling files to/from remote devic
 ## Installation
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-push-manager.sh) install
+bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manager.sh) install
 ```
 
 ## Update
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-push-manager.sh) update
+bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manager.sh) update
 ```
 
 ## Uninstall
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-push-manager.sh) uninstall
+bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manager.sh) uninstall
 ```
 
 ## Quick Start
 
 1. **Setup configuration:**
    ```bash
-   ssh-push --setup
+   sshp --setup
    ```
 
 2. **Test connection:**
    ```bash
-   ssh-push --test
+   sshp --test
    ```
 
 3. **Push files:**
    ```bash
-   ssh-push file1.v file2.v
-   ssh-push --all  # Push all files
+   sshp file1.v file2.v
+   sshp --all  # Push all files
    ```
 
 4. **Pull files:**
    ```bash
-   ssh-push --pull remote_file.txt
-   ssh-push --pull -r logs/  # Pull directory
+   sshp --pull remote_file.txt
+   sshp --pull -r logs/  # Pull directory
    ```
 
 ## Usage Examples
 
 ```bash
 # Setup SSH configuration
-ssh-push --setup
+sshp --setup
 
 # Edit configuration
-ssh-push --edit
+sshp --edit
 
 # Push files
-ssh-push file1.v file2.v
+sshp file1.v file2.v
 
 # Push all files
-ssh-push --all
+sshp --all
 
 # Push directory recursively
-ssh-push -r mydir/
+sshp -r mydir/
 
 # Push with compression (good for slow connections)
-ssh-push -z largefile.bin
+sshp -z largefile.bin
 
 # Preview what would be transferred (dry-run)
-ssh-push --dry-run file.txt
+sshp --dry-run file.txt
 
 # Pull files from remote
-ssh-push --pull remote_file.txt
+sshp --pull remote_file.txt
 
 # Pull to specific directory
-ssh-push --pull -d ./downloads/ remote_file.txt
+sshp --pull -d ./downloads/ remote_file.txt
 
 # Pull directory recursively
-ssh-push --pull -r logs/
+sshp --pull -r logs/
 
 # List remote files
-ssh-push --list
+sshp --list
 
 # Test connection
-ssh-push --test
+sshp --test
 
 # Test speed
-ssh-push --speed-test
+sshp --speed-test
 
 # Show configuration
-ssh-push --config
+sshp --config
 
 # Verbose output
-ssh-push --verbose file.txt
+sshp --verbose file.txt
 ```
 
 ## Command Line Options
@@ -132,8 +132,8 @@ ssh-push --verbose file.txt
 
 The tool looks for configuration in two places (in order):
 
-1. **Local config**: `./.ssh_push_config.json` (project-specific)
-2. **Global config**: `~/.ssh_push_config.json` (fallback for all directories)
+1. **Local config**: `./.sshp_config.json` (project-specific)
+2. **Global config**: `~/.sshp_config.json` (fallback for all directories)
 
 This means you can set up a global config once and use it everywhere, while still being able to override it per-project.
 
@@ -178,7 +178,7 @@ This means you can set up a global config once and use it everywhere, while stil
 The tool can automatically set up SSH keys during configuration:
 
 ```bash
-ssh-push --setup
+sshp --setup
 ```
 
 When you choose key authentication, it will:
@@ -214,10 +214,10 @@ chmod 644 ~/.ssh/id_rsa.pub
 ### Installation Issues
 ```bash
 # Check installation
-bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-push-manager.sh) status
+bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manager.sh) status
 
 # Reinstall if needed
-bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-push-manager.sh) install
+bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manager.sh) install
 ```
 
 ### macOS Specific
@@ -228,8 +228,8 @@ bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-pu
 ## Version History
 
 ### Version 3.5.0
-- Added **global config fallback** (`~/.ssh_push_config.json`)
-- Config priority: local `.ssh_push_config.json` > global `~/.ssh_push_config.json`
+- Added **global config fallback** (`~/.sshp_config.json`)
+- Config priority: local `.sshp_config.json` > global `~/.sshp_config.json`
 - Setup now asks whether to save config globally or locally
 - `--config` shows which config is being used and where
 

@@ -1,7 +1,7 @@
-# SSH Push Tool - Git Ignore File
+# SSHp Tool - Git Ignore File
 
 # SSH configuration files (user-specific)
-.ssh_push_config.json
+.sshp_config.json
 *.ssh_config.json
 
 # Backup files created during installation/uninstallation
@@ -13,10 +13,10 @@
 # Temporary files
 *.tmp
 *.temp
-ssh-push.tmp
+sshp.tmp
 /tmp/install_check.sh
-/tmp/ssh_push_check
-/tmp/ssh_push_new
+/tmp/sshp_check
+/tmp/sshp_new
 /tmp/install_self_update.sh
 
 # Python cache files
