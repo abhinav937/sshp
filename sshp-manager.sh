@@ -271,16 +271,26 @@ class SSHpTool:
             print(f"Error copying key: {e}")
             return False
 
-    def setup_config(self):
+    def setup_config(self, existing_config=None):
         """Interactive setup of SSH configuration"""
         print("SSHp Tool Configuration Setup")
         print("==================================")
 
-        config = {}
+        if existing_config:
+            print("Press Enter to keep current values (shown in brackets).")
+            print("")
+
+        config = existing_config.copy() if existing_config else {}
 
         # Hostname with validation
         while True:
-            hostname = input("Remote hostname/IP (e.g., pi@192.168.1.100): ").strip()
+            default_host = config.get('hostname', '')
+            prompt = f"Remote hostname/IP [{default_host}]: " if default_host else "Remote hostname/IP (e.g., pi@192.168.1.100): "
+            hostname = input(prompt).strip()
+            
+            if not hostname and default_host:
+                hostname = default_host
+
             if hostname:
                 valid, error = validate_hostname(hostname)
                 if valid:
@@ -292,9 +302,10 @@ class SSHpTool:
 
         # Port with validation
         while True:
-            port = input("SSH port (default: 22): ").strip()
+            default_port = config.get('port', 22)
+            port = input(f"SSH port (default: {default_port}): ").strip()
             if not port:
-                config['port'] = 22
+                config['port'] = default_port
                 break
             valid, result = validate_port(port)
             if valid:
@@ -304,9 +315,10 @@ class SSHpTool:
 
         # Remote directory with validation
         while True:
-            remote_dir = input("Remote working directory (default: ~): ").strip()
+            default_dir = config.get('remote_dir', '~')
+            remote_dir = input(f"Remote working directory (default: {default_dir}): ").strip()
             if not remote_dir:
-                config['remote_dir'] = "~"
+                config['remote_dir'] = default_dir
                 break
             valid, error = validate_path(remote_dir)
             if valid:
@@ -317,9 +329,10 @@ class SSHpTool:
         # Transfer method (scp or rsync)
         if self.has_rsync:
             while True:
-                method = input("Transfer method (scp/rsync) [rsync]: ").strip().lower()
+                default_method = config.get('transfer_method', 'rsync')
+                method = input(f"Transfer method (scp/rsync) [{default_method}]: ").strip().lower()
                 if not method:
-                    method = "rsync"
+                    method = default_method
                 if method in ["scp", "rsync"]:
                     config['transfer_method'] = method
                     break
@@ -330,9 +343,10 @@ class SSHpTool:
 
         # Authentication method
         while True:
-            auth_method = input("Authentication method (key/password) [key]: ").strip().lower()
+            default_auth = config.get('auth_method', 'key')
+            auth_method = input(f"Authentication method (key/password) [{default_auth}]: ").strip().lower()
             if not auth_method:
-                auth_method = "key"
+                auth_method = default_auth
             if auth_method in ["key", "password"]:
                 config['auth_method'] = auth_method
                 break
@@ -340,8 +354,9 @@ class SSHpTool:
 
         # SSH key setup for key authentication
         if auth_method == "key":
-            key_path = input("SSH key path (default: ~/.ssh/id_rsa): ").strip()
-            config['key_path'] = key_path if key_path else "~/.ssh/id_rsa"
+            default_key = config.get('key_path', '~/.ssh/id_rsa')
+            key_path = input(f"SSH key path (default: {default_key}): ").strip()
+            config['key_path'] = key_path if key_path else default_key
 
             # Offer to setup SSH key automatically
             setup_key = input("Setup SSH key for passwordless authentication? (Y/n): ").strip().lower()
@@ -413,7 +428,7 @@ class SSHpTool:
         self.show_config()
 
         if input("Edit configuration? (y/N): ").lower() == 'y':
-            return self.setup_config()
+            return self.setup_config(existing_config=self.config)
         return True
 
     def show_config(self):
@@ -465,15 +480,16 @@ class SSHpTool:
         print("Testing SSH connection...")
 
         ssh_cmd = self._build_ssh_base_cmd()
-        ssh_cmd.append("echo 'SSH connection successful!'")
+        ssh_cmd.append("exit")
 
         try:
-            result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=10)
+            # simple check without capturing output to allow password prompt
+            result = subprocess.run(ssh_cmd, timeout=10)
             if result.returncode == 0:
                 print("SSH connection successful!")
                 return True
             else:
-                print(f"SSH connection failed: {result.stderr}")
+                print("SSH connection failed.")
                 return False
         except subprocess.TimeoutExpired:
             print("SSH connection timed out.")
@@ -489,17 +505,17 @@ class SSHpTool:
             return False
 
         print("Listing remote files...")
+        print("Remote files:")
+        print("-------------")
 
         ssh_cmd = self._build_ssh_base_cmd()
         ssh_cmd.append(f"ls -la {self.config['remote_dir']}")
 
         try:
-            result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                print("Remote files:")
-                print(result.stdout)
-            else:
-                print(f"Failed to list remote files: {result.stderr}")
+            # Run without capturing output to allow password prompt
+            result = subprocess.run(ssh_cmd, timeout=10)
+            if result.returncode != 0:
+                print("Failed to list remote files.")
         except OSError as e:
             print(f"Error listing remote files: {e}")
 
@@ -739,7 +755,8 @@ class SSHpTool:
             start_time = time.time()
 
             try:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                # Run without capturing output to allow password prompt and progress bar
+                result = subprocess.run(cmd, timeout=300)
                 end_time = time.time()
 
                 if result.returncode == 0:
@@ -747,6 +764,7 @@ class SSHpTool:
                     speed_mbps = (actual_size_mb * 8) / transfer_time  # Convert to Mbps
                     speed_mb_per_sec = actual_size_mb / transfer_time
 
+                    print("")
                     print("Speed Test Results:")
                     print("==================")
                     print(f"File size: {actual_size_mb:.2f} MB")
@@ -759,11 +777,13 @@ class SSHpTool:
                     cleanup_cmd = self._build_ssh_base_cmd()
                     cleanup_cmd.append(f"rm -f {self.config['remote_dir']}/speed_test.tmp")
 
+                    # We might need password again here, but for now let's suppress output to keep it clean
+                    # If it hangs on password prompt, user will know
                     subprocess.run(cleanup_cmd, capture_output=True, timeout=10)
 
                     return True
                 else:
-                    print(f"Speed test failed: {result.stderr}")
+                    print("Speed test failed.")
                     return False
 
             except subprocess.TimeoutExpired:
