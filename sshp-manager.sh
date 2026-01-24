@@ -515,6 +515,81 @@ class SSHpTool:
             print(f"SSH connection error: {e}")
             return False
 
+    def run_with_progress(self, cmd, expected_total, quiet=False, dry_run=False):
+        """Run command with progress tracking and interruption handling"""
+        import signal
+        
+        start_time = time.time()
+        files_count = 0
+        process = None
+        
+        # Heuristics
+        is_rsync = "rsync" in cmd[0]
+        
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,  # Line buffered
+                universal_newlines=True
+            )
+            
+            # Process output line by line
+            while True:
+                line = process.stdout.readline()
+                if not line and process.poll() is not None:
+                    break
+                if not line:
+                    continue
+                    
+                # Counting logic
+                line_stripped = line.strip()
+                if not line_stripped:
+                    continue
+                    
+                counted = False
+                if is_rsync:
+                    # Rsync lists files. Skip meta headers/footers.
+                    # "sending incremental file list"
+                    # "sent 123 bytes"
+                    # "total size is"
+                    lower = line_stripped.lower()
+                    if not any(x in lower for x in ["sending incremental", "sent ", "total size", "speedup is", "bytes/sec", "drwx"]):
+                         # Likely a file path
+                         files_count += 1
+                         counted = True
+                else:
+                    # SCP: Look for progress indicators or percentages if not quiet
+                    if "%" in line:
+                        files_count += 1
+                        counted = True
+                
+                # Output handling
+                if not quiet:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+
+            return_code = process.poll()
+            duration = time.time() - start_time
+            return return_code == 0, files_count, duration
+            
+        except KeyboardInterrupt:
+            # Handle user interruption
+            if process:
+                process.terminate()
+                # Give it a moment to die gracefully
+                try:
+                    process.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+            
+            duration = time.time() - start_time
+            print("\n\nOperation cancelled by user.")
+            print(f"Stats: Transferred {files_count}/{expected_total} files (approx) in {duration:.2f}s")
+            return False, files_count, duration
+
     def list_remote_files(self):
         """List files in remote directory"""
         if not self.config:
@@ -556,13 +631,15 @@ class SSHpTool:
 
     def _build_rsync_cmd(self, compress=False, verbose=False, dry_run=False):
         """Build rsync command with options"""
-        rsync_cmd = ["rsync", "-a"]
+        # Always use -v so we can track files in our wrapper, check quiet mode at output level
+        rsync_cmd = ["rsync", "-a", "-v"]
         
         if not self.config.get('quiet_mode', False):
             rsync_cmd.append("--progress")
 
         if verbose:
-            rsync_cmd.append("-v")
+            # -v already added, but maybe user wants more? rsync doesn't mind -vv
+             rsync_cmd.append("-v")
         if compress:
             rsync_cmd.append("-z")
         if dry_run:
@@ -625,23 +702,22 @@ class SSHpTool:
             if verbose or dry_run:
                 print(f"Running: {' '.join(cmd)}")
 
-            start_time = time.time()
-            result = subprocess.run(cmd, timeout=300)
-            end_time = time.time()
-            duration = end_time - start_time
+            quiet = self.config.get('quiet_mode', False)
+            success, count, duration = self.run_with_progress(cmd, len(valid_files), quiet=quiet, dry_run=dry_run)
 
-            if result.returncode == 0:
+            if success:
                 if dry_run:
                     print("[DRY RUN] Transfer simulation complete!")
                 else:
-                    print(f"Files pushed successfully! ({len(valid_files)} files in {duration:.2f}s)")
+                    print(f"Files pushed successfully! ({count}/{len(valid_files)} files in {duration:.2f}s)")
                 return True
             else:
-                print("Failed to push files.")
+                if not isinstance(success, bool): # In case we want to differentiate signal
+                     pass
+                # The run_with_progress already printed error/stats if interrupted
+                if quiet and count == 0 and not dry_run:
+                     print("Failed to push files.")
                 return False
-        except subprocess.TimeoutExpired:
-            print("File transfer timed out.")
-            return False
         except OSError as e:
             print(f"Error pushing files: {e}")
             return False
@@ -683,23 +759,20 @@ class SSHpTool:
             if verbose or dry_run:
                 print(f"Running: {' '.join(cmd)}")
 
-            start_time = time.time()
-            result = subprocess.run(cmd, timeout=300)
-            end_time = time.time()
-            duration = end_time - start_time
+            quiet = self.config.get('quiet_mode', False)
+            success, count, duration = self.run_with_progress(cmd, len(remote_files), quiet=quiet, dry_run=dry_run)
 
-            if result.returncode == 0:
+            if success:
                 if dry_run:
                     print("[DRY RUN] Transfer simulation complete!")
                 else:
-                    print(f"Files pulled successfully! ({len(remote_files)} files in {duration:.2f}s)")
+                    print(f"Files pulled successfully! ({count}/{len(remote_files)} files in {duration:.2f}s)")
                 return True
             else:
-                print("Failed to pull files.")
+                 # run_with_progress handles interruption msgs
+                if quiet and count == 0 and not dry_run:
+                     print("Failed to pull files.")
                 return False
-        except subprocess.TimeoutExpired:
-            print("File transfer timed out.")
-            return False
         except OSError as e:
             print(f"Error pulling files: {e}")
             return False
@@ -918,7 +991,11 @@ Examples:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nInterrupted.")
+        sys.exit(130)
 EOF
 }
 
