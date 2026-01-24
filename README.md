@@ -130,7 +130,14 @@ ssh-push --verbose file.txt
 
 ## Configuration
 
-The tool stores configuration in `.ssh_push_config.json`:
+The tool looks for configuration in two places (in order):
+
+1. **Local config**: `./.ssh_push_config.json` (project-specific)
+2. **Global config**: `~/.ssh_push_config.json` (fallback for all directories)
+
+This means you can set up a global config once and use it everywhere, while still being able to override it per-project.
+
+### Example Config
 
 ```json
 {
@@ -219,6 +226,12 @@ bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-pu
 - All `sed` and `stat` commands are cross-platform compatible
 
 ## Version History
+
+### Version 3.5.0
+- Added **global config fallback** (`~/.ssh_push_config.json`)
+- Config priority: local `.ssh_push_config.json` > global `~/.ssh_push_config.json`
+- Setup now asks whether to save config globally or locally
+- `--config` shows which config is being used and where
 
 ### Version 3.4.0
 - Added `--pull` command to retrieve files from remote
