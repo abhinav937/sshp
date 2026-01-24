@@ -341,6 +341,22 @@ class SSHpTool:
             config['transfer_method'] = "scp"
             print("Note: rsync not found, using scp.")
 
+        # Quiet mode
+        while True:
+            default_quiet = config.get('quiet_mode', False)
+            quiet_str = "yes" if default_quiet else "no"
+            quiet = input(f"Quiet mode (summary only) (yes/no) [{quiet_str}]: ").strip().lower()
+            if not quiet:
+                config['quiet_mode'] = default_quiet
+                break
+            if quiet in ['y', 'yes']:
+                config['quiet_mode'] = True
+                break
+            elif quiet in ['n', 'no']:
+                config['quiet_mode'] = False
+                break
+            print("Please answer yes or no.")
+
         # Authentication method
         while True:
             default_auth = config.get('auth_method', 'key')
@@ -448,6 +464,7 @@ class SSHpTool:
         print(f"  Port: {self.config.get('port', 'Not set')}")
         print(f"  Remote Directory: {self.config.get('remote_dir', 'Not set')}")
         print(f"  Transfer Method: {self.config.get('transfer_method', 'scp')}")
+        print(f"  Quiet Mode: {'Yes' if self.config.get('quiet_mode', False) else 'No'}")
         print(f"  Auth Method: {self.config.get('auth_method', 'Not set')}")
         if self.config.get('auth_method') == 'key':
             print(f"  SSH Key: {self.config.get('key_path', 'Not set')}")
@@ -539,7 +556,10 @@ class SSHpTool:
 
     def _build_rsync_cmd(self, compress=False, verbose=False, dry_run=False):
         """Build rsync command with options"""
-        rsync_cmd = ["rsync", "-a", "--progress"]
+        rsync_cmd = ["rsync", "-a"]
+        
+        if not self.config.get('quiet_mode', False):
+            rsync_cmd.append("--progress")
 
         if verbose:
             rsync_cmd.append("-v")
@@ -605,12 +625,16 @@ class SSHpTool:
             if verbose or dry_run:
                 print(f"Running: {' '.join(cmd)}")
 
+            start_time = time.time()
             result = subprocess.run(cmd, timeout=300)
+            end_time = time.time()
+            duration = end_time - start_time
+
             if result.returncode == 0:
                 if dry_run:
                     print("[DRY RUN] Transfer simulation complete!")
                 else:
-                    print("Files pushed successfully!")
+                    print(f"Files pushed successfully! ({len(valid_files)} files in {duration:.2f}s)")
                 return True
             else:
                 print("Failed to push files.")
@@ -659,12 +683,16 @@ class SSHpTool:
             if verbose or dry_run:
                 print(f"Running: {' '.join(cmd)}")
 
+            start_time = time.time()
             result = subprocess.run(cmd, timeout=300)
+            end_time = time.time()
+            duration = end_time - start_time
+
             if result.returncode == 0:
                 if dry_run:
                     print("[DRY RUN] Transfer simulation complete!")
                 else:
-                    print("Files pulled successfully!")
+                    print(f"Files pulled successfully! ({len(remote_files)} files in {duration:.2f}s)")
                 return True
             else:
                 print("Failed to pull files.")
@@ -846,11 +874,15 @@ Examples:
     opt_group.add_argument('--dry-run', '-n', action='store_true', help='Dry run (simulation)')
     opt_group.add_argument('--dest', '-d', default='.', help='Destination for pulled files')
     opt_group.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    opt_group.add_argument('--quiet', '-q', action='store_true', help='Quiet mode (summary only)')
     opt_group.add_argument('--version', action='version', version='sshp 3.5.2')
 
     args = parser.parse_args()
 
     tool = SSHpTool()
+
+    if args.quiet:
+        tool.config['quiet_mode'] = True
 
     # Handle different commands
     if args.global_setup:
