@@ -1,6 +1,6 @@
 # SSH Push Tool
 
-A simple tool for pushing files to remote devices via SSH.
+A simple, cross-platform tool for pushing and pulling files to/from remote devices via SSH.
 
 ## Features
 
@@ -10,7 +10,11 @@ A simple tool for pushing files to remote devices via SSH.
 - Interactive setup
 - Project-specific SSH settings
 - No external dependencies
-- Bulk file operations
+- **Push and pull** file operations
+- **Recursive directory** support
+- **Rsync support** (auto-detected) for faster incremental transfers
+- **Compression option** for slow connections
+- **Dry-run mode** to preview transfers
 - Speed testing
 - Automatic SSH key setup
 
@@ -50,6 +54,12 @@ bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-pu
    ssh-push --all  # Push all files
    ```
 
+4. **Pull files:**
+   ```bash
+   ssh-push --pull remote_file.txt
+   ssh-push --pull -r logs/  # Pull directory
+   ```
+
 ## Usage Examples
 
 ```bash
@@ -65,6 +75,24 @@ ssh-push file1.v file2.v
 # Push all files
 ssh-push --all
 
+# Push directory recursively
+ssh-push -r mydir/
+
+# Push with compression (good for slow connections)
+ssh-push -z largefile.bin
+
+# Preview what would be transferred (dry-run)
+ssh-push --dry-run file.txt
+
+# Pull files from remote
+ssh-push --pull remote_file.txt
+
+# Pull to specific directory
+ssh-push --pull -d ./downloads/ remote_file.txt
+
+# Pull directory recursively
+ssh-push --pull -r logs/
+
 # List remote files
 ssh-push --list
 
@@ -76,7 +104,29 @@ ssh-push --speed-test
 
 # Show configuration
 ssh-push --config
+
+# Verbose output
+ssh-push --verbose file.txt
 ```
+
+## Command Line Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--setup` | `-s` | Setup SSH configuration |
+| `--edit` | `-e` | Edit existing configuration |
+| `--all` | `-a` | Push all non-hidden files |
+| `--pull` | `-p` | Pull files from remote |
+| `--recursive` | `-r` | Recursive transfer for directories |
+| `--compress` | `-z` | Enable compression |
+| `--dry-run` | `-n` | Preview without transferring |
+| `--dest` | `-d` | Local destination for pulls |
+| `--list` | `-l` | List remote files |
+| `--test` | `-t` | Test SSH connection |
+| `--speed-test` | `-st` | Test transfer speed |
+| `--config` | `-c` | Show configuration |
+| `--verbose` | `-v` | Verbose output |
+| `--version` | | Show version |
 
 ## Configuration
 
@@ -86,11 +136,34 @@ The tool stores configuration in `.ssh_push_config.json`:
 {
   "hostname": "pi@192.168.1.100",
   "port": 22,
-  "remote_dir": "~/fpga_work",
+  "remote_dir": "~",
+  "transfer_method": "rsync",
   "auth_method": "key",
   "key_path": "~/.ssh/id_rsa"
 }
 ```
+
+### Configuration Options
+
+- **hostname**: Remote host in `user@host` or `host` format
+- **port**: SSH port (default: 22)
+- **remote_dir**: Default remote directory (default: ~)
+- **transfer_method**: `scp` or `rsync` (rsync preferred if available)
+- **auth_method**: `key` or `password`
+- **key_path**: Path to SSH private key
+
+## Transfer Methods
+
+### SCP (Default fallback)
+- Works everywhere SSH works
+- Simple and reliable
+- Good for single file transfers
+
+### Rsync (Recommended)
+- Faster for incremental transfers
+- Shows progress during transfer
+- Only transfers changed portions of files
+- Auto-detected during setup
 
 ## SSH Key Setup
 
@@ -140,7 +213,26 @@ bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-pu
 bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-push-manager.sh) install
 ```
 
+### macOS Specific
+- Rsync is pre-installed on macOS
+- Uses `shasum` instead of `sha256sum` for checksums
+- All `sed` and `stat` commands are cross-platform compatible
+
 ## Version History
+
+### Version 3.4.0
+- Added `--pull` command to retrieve files from remote
+- Added recursive directory support (`-r`)
+- Added compression option (`-z`)
+- Added dry-run mode (`-n`)
+- Added rsync support (auto-detected)
+- Fixed macOS/FreeBSD compatibility (`sed -i`, `stat` commands)
+- Fixed `sha256sum` for macOS (uses `shasum -a 256`)
+- Improved input validation for hostname, port, and paths
+- Changed default remote directory from `~/fpga_work` to `~`
+- Removed redundant imports in Python code
+- Fixed bare except clauses
+- Improved temp file cleanup
 
 ### Version 3.3.7
 - Fixed checksum comparison for same-version updates
@@ -179,4 +271,4 @@ bash <(curl -s https://raw.githubusercontent.com/abhinav937/ssh-push/main/ssh-pu
 
 ## License
 
-MIT License 
+MIT License
