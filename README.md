@@ -227,6 +227,13 @@ bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manag
 
 ## Version History
 
+### Version 3.5.2
+- Improved **help message** and command organization
+- Better grouping of arguments in help output
+- Simplified usage examples
+- Same features as 3.5.1 with better user experience
+
+
 ### Version 3.5.0
 - Added **global config fallback** (`~/.sshp_config.json`)
 - Config priority: local `.sshp_config.json` > global `~/.sshp_config.json`

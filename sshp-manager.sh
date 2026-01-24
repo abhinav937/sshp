@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # SSHp Tool - Unified Manager Script
-# Version: 3.5.1 - Handles install, uninstall, and update operations
+# Version: 3.5.2 - Handles install, uninstall, and update operations
 
 set -e
 
@@ -96,7 +96,7 @@ output_sshp_script() {
 #!/usr/bin/env python3
 """
 SSHp Tool - Self-contained script for pushing files to remote devices
-Version: 3.5.1
+Version: 3.5.2
 
 Features:
 - Push/pull files via SCP or rsync
@@ -789,47 +789,44 @@ def main():
     parser = argparse.ArgumentParser(
         description="SSH File Push Tool - Push and pull files to/from remote device",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        usage="sshp [options] [files ...]",
         epilog="""
 Examples:
-  sshp --setup                    # Setup SSH configuration (asks local/global)
-  sshp --global-setup             # Setup global config (~/.sshp_config.json)
-  sshp --local-setup              # Setup local config (./.sshp_config.json)
-  sshp --edit                     # Edit existing configuration
-  sshp blinky.v                   # Push single file
-  sshp file1.v file2.v            # Push multiple files
-  sshp --all                      # Push all non-hidden files
-  sshp -r mydir/                  # Push directory recursively
+  sshp --setup                    # Setup SSH configuration
+  sshp file.txt                   # Push file
   sshp --pull remote.txt          # Pull file from remote
-  sshp --pull -r logs/            # Pull directory recursively
-  sshp --list                     # List remote files
-  sshp --test                     # Test SSH connection
-  sshp --speed-test               # Test file transfer speed
-  sshp --dry-run file.txt         # Preview transfer without executing
-  sshp -z file.txt                # Push with compression
-  sshp --config                   # Show configuration
-  sshp --verbose blinky.v         # Push with verbose output
-        """
+  sshp -r dir/                    # Push/Pull directory recursively
+  sshp --test                     # Test connection
+"""
     )
-
+    
+    # Primary Argument
     parser.add_argument('files', nargs='*', help='Files to push/pull')
-    parser.add_argument('--setup', '-s', action='store_true', help='Setup SSH configuration (asks local/global)')
-    parser.add_argument('--global-setup', '-gs', action='store_true', help='Setup global SSH configuration (~/.sshp_config.json)')
-    parser.add_argument('--local-setup', '-ls', action='store_true', help='Setup local SSH configuration (./.sshp_config.json)')
-    parser.add_argument('--edit', '-e', action='store_true', help='Edit existing SSH configuration')
-    parser.add_argument('--all', '-a', action='store_true', help='Push all non-hidden files in current directory')
-    parser.add_argument('--list', '-l', action='store_true', help='List files in remote working directory')
-    parser.add_argument('--test', '-t', action='store_true', help='Test SSH connection')
-    parser.add_argument('--speed-test', '-st', action='store_true', help='Test file transfer speed with a test file')
-    parser.add_argument('--config', '-c', action='store_true', help='Show current configuration')
-    parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
-    parser.add_argument('--version', action='version', version='sshp 3.5.1')
 
-    # New options
-    parser.add_argument('--pull', '-p', action='store_true', help='Pull files from remote instead of pushing')
-    parser.add_argument('--recursive', '-r', action='store_true', help='Recursive transfer for directories')
-    parser.add_argument('--compress', '-z', action='store_true', help='Enable compression during transfer')
-    parser.add_argument('--dry-run', '-n', action='store_true', help='Show what would be transferred without doing it')
-    parser.add_argument('--dest', '-d', default='.', help='Local destination for pulled files (default: current dir)')
+    # Configuration Group
+    config_group = parser.add_argument_group('Configuration')
+    config_group.add_argument('--setup', '-s', action='store_true', help='Setup SSH configuration')
+    config_group.add_argument('--global-setup', '-gs', action='store_true', help='Setup global config (~/.sshp_config.json)')
+    config_group.add_argument('--local-setup', '-ls', action='store_true', help='Setup local config (./.sshp_config.json)')
+    config_group.add_argument('--edit', '-e', action='store_true', help='Edit existing configuration')
+    config_group.add_argument('--config', '-c', action='store_true', help='Show current configuration')
+
+    # Actions Group
+    action_group = parser.add_argument_group('Actions')
+    action_group.add_argument('--pull', '-p', action='store_true', help='Pull files from remote')
+    action_group.add_argument('--list', '-l', action='store_true', help='List remote files')
+    action_group.add_argument('--test', '-t', action='store_true', help='Test SSH connection')
+    action_group.add_argument('--speed-test', '-st', action='store_true', help='Test transfer speed')
+    
+    # Transfer Options Group
+    opt_group = parser.add_argument_group('Transfer Options')
+    opt_group.add_argument('--all', '-a', action='store_true', help='Push all non-hidden files')
+    opt_group.add_argument('--recursive', '-r', action='store_true', help='Recursive transfer')
+    opt_group.add_argument('--compress', '-z', action='store_true', help='Enable compression')
+    opt_group.add_argument('--dry-run', '-n', action='store_true', help='Dry run (simulation)')
+    opt_group.add_argument('--dest', '-d', default='.', help='Destination for pulled files')
+    opt_group.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    opt_group.add_argument('--version', action='version', version='sshp 3.5.2')
 
     args = parser.parse_args()
 
@@ -1138,7 +1135,7 @@ confirm_operation() {
             # Get current version for update
             local script_path="$HOME/.local/bin/sshp"
             local current_version="not installed"
-            local new_version="3.5.1"
+            local new_version="3.5.2"
 
             if [[ -f "$script_path" ]]; then
                 current_version=$(grep -o "version='sshp [0-9]\+\.[0-9]\+\.[0-9]\+'" "$script_path" 2>/dev/null | grep -o "[0-9]\+\.[0-9]\+\.[0-9]\+" | head -1)
@@ -1225,7 +1222,8 @@ install_sshp() {
     print_status "To get started, run: sshp --help"
     print_status "To setup SSH configuration, run: sshp --setup"
     echo ""
-    print_status "New features in v3.5.1:"
+    print_status "New features in v3.5.2:"
+    echo "  • Improved help message and command organization"
     echo "  • Global config fallback (~/.sshp_config.json)"
     echo "  • Pull files from remote (--pull)"
     echo "  • Recursive directory support (-r)"
@@ -1315,7 +1313,7 @@ update_sshp() {
 
     # For same version updates, checksum comparison is already done in confirm_operation
     local current_version=$(get_current_version)
-    local new_version="3.5.1"
+    local new_version="3.5.2"
 
     if [[ "$current_version" == "$new_version" ]]; then
         # If we reach here, user chose to update anyway or code changed
@@ -1331,7 +1329,8 @@ update_sshp() {
     print_status "Your existing configuration has been preserved."
     print_status "To verify the update, run: sshp --version"
     echo ""
-    print_status "What's new in v3.5.1:"
+    print_status "What's new in v3.5.2:"
+    echo "  • Improved help message and command organization"
     echo "  • Global config fallback (~/.sshp_config.json)"
     echo "  • Pull files from remote (--pull)"
     echo "  • Recursive directory support (-r)"
