@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # SSH Push Tool - Unified Manager Script
-# Version: 3.4.0 - Handles install, uninstall, and update operations
+# Version: 3.5.0 - Handles install, uninstall, and update operations
 
 set -e
 
@@ -96,7 +96,7 @@ output_ssh_push_script() {
 #!/usr/bin/env python3
 """
 SSH Push Tool - Self-contained script for pushing files to remote devices
-Version: 3.4.0
+Version: 3.5.0
 
 Features:
 - Push/pull files via SCP or rsync
@@ -152,26 +152,39 @@ def validate_path(path):
 
 class SSHPushTool:
     def __init__(self):
-        self.config_file = ".ssh_push_config.json"
-        self.config = self.load_config()
+        self.local_config_file = ".ssh_push_config.json"
+        self.global_config_file = os.path.expanduser("~/.ssh_push_config.json")
+        self.config, self.config_source = self.load_config()
         self.has_rsync = shutil.which('rsync') is not None
 
     def load_config(self):
-        """Load SSH configuration from file"""
-        if os.path.exists(self.config_file):
+        """Load SSH configuration from local file, falling back to global config"""
+        # Try local config first
+        if os.path.exists(self.local_config_file):
             try:
-                with open(self.config_file, 'r') as f:
-                    return json.load(f)
+                with open(self.local_config_file, 'r') as f:
+                    return json.load(f), "local"
             except (json.JSONDecodeError, IOError):
-                return None
-        return None
+                pass
 
-    def save_config(self, config):
+        # Fall back to global config
+        if os.path.exists(self.global_config_file):
+            try:
+                with open(self.global_config_file, 'r') as f:
+                    return json.load(f), "global"
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        return None, None
+
+    def save_config(self, config, save_global=False):
         """Save SSH configuration to file"""
+        config_file = self.global_config_file if save_global else self.local_config_file
         try:
-            with open(self.config_file, 'w') as f:
+            with open(config_file, 'w') as f:
                 json.dump(config, f, indent=2)
-            print(f"Configuration saved to {self.config_file}")
+            config_type = "global" if save_global else "local"
+            print(f"Configuration saved to {config_file} ({config_type})")
             return True
         except IOError as e:
             print(f"Error saving configuration: {e}")
@@ -351,8 +364,16 @@ class SSHPushTool:
             else:
                 print("Key setup skipped. You can set up keys manually later.")
 
-        if self.save_config(config):
+        # Ask where to save
+        save_global = False
+        save_choice = input("Save as global config (available everywhere)? (y/N): ").strip().lower()
+        if save_choice in ['y', 'yes']:
+            save_global = True
+
+        if self.save_config(config, save_global=save_global):
             print("Configuration setup complete!")
+            if save_global:
+                print("This config will be used as fallback for all directories.")
             return True
         return False
 
@@ -374,9 +395,14 @@ class SSHPushTool:
         if not self.config:
             print("No SSH configuration found.")
             print("Run with --setup to create configuration.")
+            print("")
+            print("Config locations:")
+            print(f"  Local:  ./{self.local_config_file}")
+            print(f"  Global: {self.global_config_file}")
             return
 
-        print("Current SSH configuration:")
+        config_file = self.global_config_file if self.config_source == "global" else self.local_config_file
+        print(f"Current SSH configuration ({self.config_source}: {config_file}):")
         print(f"  Hostname: {self.config.get('hostname', 'Not set')}")
         print(f"  Port: {self.config.get('port', 'Not set')}")
         print(f"  Remote Directory: {self.config.get('remote_dir', 'Not set')}")
@@ -385,6 +411,12 @@ class SSHPushTool:
         if self.config.get('auth_method') == 'key':
             print(f"  SSH Key: {self.config.get('key_path', 'Not set')}")
         print(f"  Rsync Available: {'Yes' if self.has_rsync else 'No'}")
+
+        # Show if there's also a local/global config available
+        if self.config_source == "global" and os.path.exists(self.local_config_file):
+            print(f"\n  Note: Local config also exists (would take priority)")
+        elif self.config_source == "local" and os.path.exists(self.global_config_file):
+            print(f"\n  Note: Global config also exists at {self.global_config_file}")
 
     def _build_ssh_base_cmd(self):
         """Build base SSH command with common options"""
@@ -760,7 +792,7 @@ Examples:
     parser.add_argument('--speed-test', '-st', action='store_true', help='Test file transfer speed with a test file')
     parser.add_argument('--config', '-c', action='store_true', help='Show current configuration')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
-    parser.add_argument('--version', action='version', version='ssh-push 3.4.0')
+    parser.add_argument('--version', action='version', version='ssh-push 3.5.0')
 
     # New options
     parser.add_argument('--pull', '-p', action='store_true', help='Pull files from remote instead of pushing')
@@ -1072,7 +1104,7 @@ confirm_operation() {
             # Get current version for update
             local script_path="$HOME/.local/bin/ssh-push"
             local current_version="not installed"
-            local new_version="3.4.0"
+            local new_version="3.5.0"
 
             if [[ -f "$script_path" ]]; then
                 current_version=$(grep -o "version='ssh-push [0-9]\+\.[0-9]\+\.[0-9]\+'" "$script_path" 2>/dev/null | grep -o "[0-9]\+\.[0-9]\+\.[0-9]\+" | head -1)
@@ -1159,7 +1191,8 @@ install_ssh_push() {
     print_status "To get started, run: ssh-push --help"
     print_status "To setup SSH configuration, run: ssh-push --setup"
     echo ""
-    print_status "New features in v3.4.0:"
+    print_status "New features in v3.5.0:"
+    echo "  • Global config fallback (~/.ssh_push_config.json)"
     echo "  • Pull files from remote (--pull)"
     echo "  • Recursive directory support (-r)"
     echo "  • Compression option (-z)"
@@ -1248,7 +1281,7 @@ update_ssh_push() {
 
     # For same version updates, checksum comparison is already done in confirm_operation
     local current_version=$(get_current_version)
-    local new_version="3.4.0"
+    local new_version="3.5.0"
 
     if [[ "$current_version" == "$new_version" ]]; then
         # If we reach here, user chose to update anyway or code changed
@@ -1264,14 +1297,14 @@ update_ssh_push() {
     print_status "Your existing configuration has been preserved."
     print_status "To verify the update, run: ssh-push --version"
     echo ""
-    print_status "What's new in v3.4.0:"
+    print_status "What's new in v3.5.0:"
+    echo "  • Global config fallback (~/.ssh_push_config.json)"
     echo "  • Pull files from remote (--pull)"
     echo "  • Recursive directory support (-r)"
     echo "  • Compression option (-z)"
     echo "  • Dry-run mode (-n)"
     echo "  • Rsync support (auto-detected)"
     echo "  • Improved macOS/FreeBSD compatibility"
-    echo "  • Better input validation"
 }
 
 # Parse command line arguments
