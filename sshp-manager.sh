@@ -522,6 +522,7 @@ class SSHpTool:
         start_time = time.time()
         files_count = 0
         total_bytes = 0
+        current_speed = ""
         process = None
         last_update_time = 0
         
@@ -559,29 +560,41 @@ class SSHpTool:
                     # Parse stats line at the end: "sent 1234 bytes  received 45 bytes"
                     if "sent " in lower and " bytes" in lower and "received " in lower:
                         try:
-                            # Extract bytes sent/received
-                            # sent 1,234 bytes  received 12 bytes
                             parts = lower.replace(',', '').split()
                             sent_idx = parts.index('sent')
                             sent_bytes = int(parts[sent_idx + 1])
-                            total_bytes = sent_bytes # Approximation for push, mostly correct
+                            total_bytes = sent_bytes 
                         except (ValueError, IndexError):
                             pass
-                    
-                    if not any(x in lower for x in ["sending incremental", "sent ", "total size", "speedup is", "bytes/sec", "drwx", "created directory"]):
-                         # Likely a file path
-                         files_count += 1
-                         counted = True
+
+                    # Parse progress speed: "4.00MB/s"
+                    # Pattern: match number + unit + /s
+                    speed_match = re.search(r'\s+([\d\.]+[KMGTP]?B/s)', line)
+                    if speed_match:
+                        current_speed = speed_match.group(1)
+
+                    # Filter out progress output and headers from file counting
+                    if not any(x in lower for x in ["sending incremental", "sent ", "total size", "speedup is", "bytes/sec", "drwx", "created directory", "%"]):
+                         # Likely a file path if not a progress line
+                         # Progress lines often imply % or /s, handled above.
+                         # Need strict check to avoid counting progress strings as files
+                         if not speed_match:
+                             files_count += 1
+                             counted = True
                 else:
                     # SCP: Look for progress indicators
                     # filename 100%  37KB   4.6MB/s   00:00
                     if "%" in line:
                         files_count += 1
                         counted = True
+                        
+                        # Try to parse speed
+                        speed_match = re.search(r'\s+([\d\.]+[KMGTP]?B/s)', line)
+                        if speed_match:
+                            current_speed = speed_match.group(1)
+
                         # Try to parse size
                         try:
-                            # Split by whitespace, look for the size (usually 2nd or 3rd element depending on filename)
-                            # Or simple regex: 100% \s+ (size)
                             match = re.search(r'100%\s+([\d\.]+)([KMGTP]?B)', line)
                             if match:
                                 val = float(match.group(1))
@@ -598,11 +611,12 @@ class SSHpTool:
                 if not quiet:
                     sys.stdout.write(line)
                     sys.stdout.flush()
-                elif counted:
-                    # In quiet mode, update progress line periodically
+                elif counted or (current_speed and time.time() - last_update_time > 0.2):
+                    # In quiet mode, update progress line periodically or on file count
                     current_time = time.time()
                     if current_time - last_update_time > 0.1:
-                        sys.stdout.write(f"\rTransferred: {files_count} files...")
+                        speed_str = f" ({current_speed})" if current_speed else ""
+                        sys.stdout.write(f"\rTransferred: {files_count} files{speed_str}...")
                         sys.stdout.flush()
                         last_update_time = current_time
 
@@ -697,12 +711,11 @@ class SSHpTool:
     def _build_rsync_cmd(self, compress=False, verbose=False, dry_run=False):
         """Build rsync command with options"""
         # Always use -v so we can track files in our wrapper, check quiet mode at output level
-        # Add --stats to get final transfer statistics
-        rsync_cmd = ["rsync", "-a", "-v", "--stats"]
+        # Add --stats to get final transfer statistics, --progress for live speed
+        rsync_cmd = ["rsync", "-a", "-v", "--stats", "--progress"]
         
-        if not self.config.get('quiet_mode', False):
-            rsync_cmd.append("--progress")
-
+        # We always add --progress now to capture speed, run_with_progress handles suppression
+        
         if verbose:
             # -v already added, but maybe user wants more? rsync doesn't mind -vv
              rsync_cmd.append("-v")
