@@ -2,7 +2,7 @@
 
 A simple, cross-platform tool for pushing and pulling files to/from remote devices via SSH.
 
-Version 4.0.1 keeps the 3.x commands, flags, and config files. Install, update, and uninstall are unchanged.
+Version 4.0.2 keeps the 3.x commands, flags, and config files. Install, update, and uninstall are unchanged. Add `-h` to a flag for help on that flag (`sshp -p -h`, `sshp -l -h`). `sshp -h` is still the full list.
 
 ## Features
 
@@ -114,6 +114,10 @@ sshp --config
 
 # Verbose output
 sshp --verbose file.txt
+
+# Help for one flag
+sshp -p -h
+sshp -l -h
 ```
 
 ## Command Line Options
@@ -137,6 +141,8 @@ sshp --verbose file.txt
 | `--config` | `-c` | Show configuration |
 | `--verbose` | `-v` | Verbose output |
 | `--version` | | Show version |
+
+Add `-h` to a flag for a page about that flag: `sshp -p -h`, `sshp -l -h`, `sshp -s -h`. `sshp -h` prints this full list.
 
 ## Configuration
 
@@ -238,6 +244,10 @@ bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manag
 - All `sed` and `stat` commands are cross-platform compatible
 
 ## Version History
+
+### Version 4.0.2
+- `sshp <flag> -h` prints help for that flag (`sshp -p -h`, `sshp -l -h`, `sshp -ph`)
+- `sshp -h` still prints the full list
 
 ### Version 4.0.1
 - Filenames with spaces pull and push correctly. rsync is given the path unchanged and uses `--secluded-args` so the remote shell does not split it

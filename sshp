@@ -13,7 +13,7 @@ import tempfile
 import time
 from pathlib import Path
 
-VERSION = "4.0.1"
+VERSION = "4.0.2"
 LOCAL_NAME = ".sshp_config.json"
 GLOBAL_PATH = Path.home() / ".sshp_config.json"
 HOST_RE = re.compile(
@@ -22,13 +22,23 @@ HOST_RE = re.compile(
 UNSAFE_PATH = set(";|&$`(){}<>\n\r")
 
 
+def usable_config(data):
+    """A config counts only when it names a host. {} must not hide a global file."""
+    return isinstance(data, dict) and bool(str(data.get("hostname", "")).strip())
+
+
 def load_config():
-    """Local .sshp_config.json wins, then ~/.sshp_config.json."""
-    candidates = (
+    """Local .sshp_config.json wins, then ~/.sshp_config.json.
+
+    A local JSON object with no hostname is ignored, so a good global
+    config stays visible.
+    """
+    skipped = None
+    chosen = None
+    for path, source in (
         (Path.cwd() / LOCAL_NAME, "local"),
         (GLOBAL_PATH, "global"),
-    )
-    for path, source in candidates:
+    ):
         if not path.is_file():
             continue
         try:
@@ -36,8 +46,16 @@ def load_config():
                 data = json.load(handle)
         except (OSError, json.JSONDecodeError):
             continue
-        if isinstance(data, dict):
-            return data, source, path
+        if usable_config(data):
+            chosen = (data, source, path)
+            break
+        if source == "local":
+            skipped = path
+    if chosen:
+        data, source, path = chosen
+        if skipped is not None:
+            print(f"Ignoring {skipped}: no hostname. Using {path}.")
+        return chosen
     return None, None, None
 
 
@@ -68,7 +86,14 @@ def valid_path(path):
 
 
 def port_of(config):
-    return parse_port(config.get("port", 22)) or 22
+    """SSH port from config. A missing port is 22. A bad value is an error."""
+    if not config or "port" not in config or config.get("port") in (None, ""):
+        return 22
+    port = parse_port(config.get("port"))
+    if port is None:
+        print(f"Invalid port in config: {config.get('port')}. Run: sshp --edit")
+        return None
+    return port
 
 
 def ask(prompt, default=None):
@@ -93,7 +118,9 @@ def copy_ssh_key(config):
     """Install the public key with ssh-copy-id. Never deletes an existing key."""
     key_path = os.path.expanduser(config["key_path"])
     public_path = key_path + ".pub"
-    os.makedirs(os.path.dirname(key_path), mode=0o700, exist_ok=True)
+    key_dir = os.path.dirname(key_path)
+    if key_dir:
+        os.makedirs(key_dir, mode=0o700, exist_ok=True)
     if not os.path.exists(key_path):
         print(f"No key at {key_path}. Generating an ed25519 key.")
         result = subprocess.run(
@@ -219,13 +246,17 @@ def edit_config(config, source, path):
     show_config(config, source, path)
     answer = input("Edit configuration? (y/N): ").strip().lower()
     if answer == "y":
-        return setup_config(existing=config)
+        # Write back to the file that was loaded. Asking again defaults to
+        # "no" and would create a new local config on top of a global one.
+        return setup_config(existing=config, force=source)
     return True
 
 
 def require_config(config):
-    if not config or not config.get("hostname"):
+    if not config or not str(config.get("hostname", "")).strip():
         print("No configuration found. Run: sshp --setup")
+        return False
+    if port_of(config) is None:
         return False
     return True
 
@@ -239,6 +270,39 @@ def remote_spec(hostname, path):
     return hostname + ":" + path
 
 
+def _dq_escape(text):
+    """Escape characters that still expand inside double quotes."""
+    return (
+        text.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("$", "\\$")
+        .replace("`", "\\`")
+    )
+
+
+def remote_shell_path(path):
+    """Quote a path for a remote shell. A leading ~ still expands.
+
+    shlex.quote('~') is a quoted tilde, so the remote shell looks for a
+    directory of that name. "$HOME/..." expands, and a space in the home
+    directory stays inside one word.
+    """
+    if path == "~" or path.startswith("~/"):
+        rest = path[1:]
+        if rest in ("", "/"):
+            return '"$HOME"'
+        return '"$HOME' + _dq_escape(rest) + '"'
+    if path.startswith("~"):
+        slash = path.find("/")
+        user = path[1:] if slash == -1 else path[1:slash]
+        rest = "" if slash == -1 else path[slash + 1 :]
+        if user and all(char.isalnum() or char in "._-" for char in user):
+            if rest == "":
+                return "~" + user
+            return "~" + user + "/" + shlex.quote(rest)
+    return shlex.quote(path)
+
+
 def ssh_argv(config, remote_command):
     command = ["ssh", "-p", str(port_of(config))]
     if config.get("auth_method") == "key" and config.get("key_path"):
@@ -248,10 +312,18 @@ def ssh_argv(config, remote_command):
 
 
 def build_transfer(config, sources, dest, recursive, compress, verbose, dry_run, quiet):
-    """Return (argv, pretend). pretend is true when scp dry-run must not connect."""
+    """Return (argv, pretend). pretend is true for an scp dry-run.
+
+    The scp command is printed, then scp_dry_run connects and checks the
+    remote path. rsync dry-run is the real rsync --dry-run.
+    """
     quiet = quiet and not verbose
     if use_rsync(config):
-        command = ["rsync", "-a", "-s"]
+        # -lpt keeps links, permissions, and times. Owner and group are
+        # left alone so a normal push does not fail on chown.
+        command = ["rsync", "-lpt", "-s"]
+        if recursive:
+            command.append("-r")
         if quiet:
             command.append("-q")
         else:
@@ -266,6 +338,8 @@ def build_transfer(config, sources, dest, recursive, compress, verbose, dry_run,
         if config.get("auth_method") == "key" and config.get("key_path"):
             ssh.extend(["-i", os.path.expanduser(config["key_path"])])
         command.extend(["-e", " ".join(shlex.quote(part) for part in ssh)])
+        # "--" keeps a filename such as --delete from becoming an rsync flag.
+        command.append("--")
         command.extend(sources)
         command.append(dest)
         return command, False
@@ -287,6 +361,49 @@ def build_transfer(config, sources, dest, recursive, compress, verbose, dry_run,
     return command, dry_run
 
 
+def ssh_status(config, remote_command, timeout=30):
+    """Run one remote command. None means the SSH client did not finish."""
+    try:
+        result = subprocess.run(ssh_argv(config, remote_command), timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print("SSH connection timed out.")
+        return None
+    except OSError as exc:
+        print(f"SSH connection error: {exc}")
+        return None
+    return result.returncode
+
+
+def scp_dry_run(config, sources, dest):
+    """Connect and check the paths scp would use. Missing paths fail the run."""
+    prefix = config["hostname"] + ":"
+    if dest.startswith(prefix):
+        checks = [(dest[len(prefix):], "-d", "directory")]
+    else:
+        checks = []
+        for source in sources:
+            if not source.startswith(prefix):
+                print(f"Dry run: expected a remote path, got {source}")
+                return False
+            checks.append((source[len(prefix):], "-e", "path"))
+    if not checks:
+        print("Dry run: nothing to check.")
+        return False
+    ok = True
+    for path, flag, kind in checks:
+        code = ssh_status(config, f"test {flag} {remote_shell_path(path)}")
+        if code is None:
+            return False
+        if code == 0:
+            continue
+        if code == 255:
+            print("Dry run failed: SSH connection failed.")
+            return False
+        print(f"Dry run: remote {kind} not found: {path}")
+        ok = False
+    return ok
+
+
 def transfer(config, sources, dest, recursive, compress, verbose, dry_run, quiet, timeout=None):
     command, pretend = build_transfer(
         config, sources, dest, recursive, compress, verbose, dry_run, quiet
@@ -294,7 +411,7 @@ def transfer(config, sources, dest, recursive, compress, verbose, dry_run, quiet
     if verbose or dry_run:
         print("Running: " + " ".join(shlex.quote(part) for part in command))
     if pretend:
-        return True, 0.0
+        return scp_dry_run(config, sources, dest), 0.0
     start = time.time()
     try:
         result = subprocess.run(command, timeout=timeout)
@@ -325,7 +442,7 @@ def push_files(config, files, verbose, compress, recursive, dry_run, quiet):
         return False
     if any(os.path.isdir(path) for path in valid) and not recursive:
         print("Warning: Directories found. Use --recursive (-r) to push directories.")
-        recursive = True
+        return False
 
     remote_dir = config.get("remote_dir", "~")
     dest = remote_spec(config["hostname"], remote_dir if remote_dir.endswith("/") else remote_dir + "/")
@@ -348,10 +465,10 @@ def push_files(config, files, verbose, compress, recursive, dry_run, quiet):
 
 
 def pull_files(config, remote_files, local_dest, verbose, compress, recursive, dry_run, quiet):
-    if not require_config(config):
-        return False
     if not remote_files:
         print("No remote files specified to pull.")
+        return False
+    if not require_config(config):
         return False
 
     remote_dir = config.get("remote_dir", "~")
@@ -425,7 +542,7 @@ def list_remote_files(config):
     print("-------------")
     try:
         result = subprocess.run(
-            ssh_argv(config, "ls -la " + shlex.quote(remote_dir)),
+            ssh_argv(config, "ls -la " + remote_shell_path(remote_dir)),
             timeout=30,
         )
     except subprocess.TimeoutExpired:
@@ -476,7 +593,7 @@ def speed_test(config, size_mb=10):
         print(f"Method: {'rsync' if use_rsync(config) else 'scp'}")
         try:
             subprocess.run(
-                ssh_argv(config, "rm -f " + shlex.quote(remote_path)),
+                ssh_argv(config, "rm -f " + remote_shell_path(remote_path)),
                 capture_output=True,
                 timeout=30,
             )
@@ -493,6 +610,399 @@ def speed_test(config, size_mb=10):
             pass
 
 
+# Primary flags win over modifiers when several share one -h.
+# `sshp -p -r -h` is pull help. Modifiers explain themselves only alone.
+PRIMARY_TOPICS = {
+    "setup",
+    "global-setup",
+    "local-setup",
+    "edit",
+    "config",
+    "pull",
+    "list",
+    "test",
+    "speed-test",
+    "all",
+}
+# These short options are one argv token. They must not be split into letters.
+EXACT_SHORT = {
+    "-gs": "global-setup",
+    "-ls": "local-setup",
+    "-st": "speed-test",
+}
+SINGLE_SHORT = {
+    "s": "setup",
+    "e": "edit",
+    "c": "config",
+    "p": "pull",
+    "l": "list",
+    "t": "test",
+    "a": "all",
+    "r": "recursive",
+    "z": "compress",
+    "n": "dry-run",
+    "d": "dest",
+    "v": "verbose",
+    "q": "quiet",
+}
+LONG_TOPICS = {
+    "--setup": "setup",
+    "--global-setup": "global-setup",
+    "--local-setup": "local-setup",
+    "--edit": "edit",
+    "--config": "config",
+    "--pull": "pull",
+    "--list": "list",
+    "--test": "test",
+    "--speed-test": "speed-test",
+    "--all": "all",
+    "--recursive": "recursive",
+    "--compress": "compress",
+    "--dry-run": "dry-run",
+    "--dest": "dest",
+    "--verbose": "verbose",
+    "--quiet": "quiet",
+}
+TOPIC_FLAG = {
+    "setup": "-s",
+    "global-setup": "-gs",
+    "local-setup": "-ls",
+    "edit": "-e",
+    "config": "-c",
+    "pull": "-p",
+    "list": "-l",
+    "test": "-t",
+    "speed-test": "-st",
+    "all": "-a",
+    "recursive": "-r",
+    "compress": "-z",
+    "dry-run": "-n",
+    "dest": "-d",
+    "verbose": "-v",
+    "quiet": "-q",
+}
+TOPIC_HELP = {
+    "setup": """
+usage: sshp -s
+       sshp --setup
+
+Ask for the SSH settings and save them.
+
+Prompts for the remote host, port, remote directory, scp or rsync,
+and key or password. With a key, sshp can copy it with ssh-copy-id.
+Then asks whether to save the global config or a config in this
+directory. ./.sshp_config.json overrides ~/.sshp_config.json.
+
+examples:
+  sshp -s                         # ask, then choose where to save
+  sshp -gs                        # save ~/.sshp_config.json
+  sshp -ls                        # save ./.sshp_config.json
+  sshp -e                         # show the current config and edit it
+  sshp -s -h                      # this help
+""",
+    "global-setup": """
+usage: sshp -gs
+       sshp --global-setup
+
+Write ~/.sshp_config.json. Same prompts as sshp -s, and the file is
+saved globally. Used from any directory that has no ./.sshp_config.json.
+
+examples:
+  sshp -gs
+  sshp --global-setup
+""",
+    "local-setup": """
+usage: sshp -ls
+       sshp --local-setup
+
+Write ./.sshp_config.json in the current directory. Same prompts as
+sshp -s, and the file is saved here. This file wins over
+~/.sshp_config.json when both exist.
+
+examples:
+  sshp -ls
+  sshp --local-setup
+""",
+    "edit": """
+usage: sshp -e
+       sshp --edit
+
+Show the config in use, then ask whether to change it. Answering y
+runs the same prompts as sshp -s. Enter keeps the current value.
+The save prompt asks again: global file, or this directory.
+
+examples:
+  sshp -e
+  sshp --edit
+""",
+    "config": """
+usage: sshp -c
+       sshp --config
+
+Print the config sshp will use, and whether it came from
+./.sshp_config.json or ~/.sshp_config.json.
+
+Shows host, port, remote directory, scp or rsync, quiet mode, and
+the key path when auth is a key. This command stays local.
+
+examples:
+  sshp -c
+  sshp --config
+""",
+    "pull": """
+usage: sshp -p [options] <remote-file> ...
+       sshp --pull [options] <remote-file> ...
+
+Copy files from the remote directory in your config. They land in
+the current directory, or in the directory given with -d.
+
+A name is looked up inside that remote directory. A name that starts
+with / or ~ is used as given. sshp -c prints the remote directory.
+
+options:
+  -r, --recursive     copy directories
+  -d, --dest DEST     local destination (default: .)
+  -z, --compress      compress the transfer
+  -n, --dry-run       preview the transfer
+  -v, --verbose       print the command and pass -v through
+  -q, --quiet         summary only
+
+examples:
+  sshp -p remote.txt
+  sshp -p -r logs/
+  sshp -p -d ./downloads remote.txt
+""",
+    "list": """
+usage: sshp -l
+       sshp --list
+
+Run ls -la on the remote directory from your config. sshp -c prints
+that directory.
+
+examples:
+  sshp -l
+  sshp --list
+""",
+    "test": """
+usage: sshp -t
+       sshp --test
+
+Open an SSH session and run exit. Prints whether the connection
+worked. Gives up after 15 seconds. Uses the host, port, and key
+from sshp -c.
+
+examples:
+  sshp -t
+  sshp --test
+""",
+    "speed-test": """
+usage: sshp -st
+       sshp --speed-test
+
+Upload a 10MB temporary file to <remote directory>/speed_test.tmp
+and print the elapsed time, MB/s, and Mbps. The remote file is
+removed afterward. The local temp file is removed either way.
+Uses the transfer method from sshp -c (rsync or scp).
+
+examples:
+  sshp -st
+  sshp --speed-test
+""",
+    "all": """
+usage: sshp -a [options]
+       sshp --all [options]
+
+Push every non-hidden file in the current directory.
+
+With -r, walk subdirectories too. Hidden files and hidden
+directories stay out of the set either way.
+
+options:
+  -r, --recursive     include files in subdirectories
+  -z, --compress      compress the transfer
+  -n, --dry-run       preview the transfer
+  -v, --verbose       print the command and pass -v through
+  -q, --quiet         summary only
+
+examples:
+  sshp -a
+  sshp -a -r
+  sshp -a -n
+""",
+    "recursive": """
+usage: sshp -r <path> ...
+       sshp -p -r <remote-directory> ...
+       sshp -a -r
+
+Copy directories as well as files.
+
+scp and rsync are given -r only when this flag is set. A directory
+push without -r stops. sshp prints a warning and does not copy it.
+
+examples:
+  sshp -r dir/
+  sshp -p -r logs/
+  sshp -a -r
+""",
+    "compress": """
+usage: sshp -z <file> ...
+       sshp -p -z <remote-file> ...
+
+Compress the stream. scp is given -C. rsync is given -z.
+Worth using on a slow link.
+
+examples:
+  sshp -z large.bin
+  sshp -p -z large.bin
+""",
+    "dry-run": """
+usage: sshp -n <file> ...
+       sshp -p -n <remote-file> ...
+
+Preview a transfer.
+
+rsync runs with --dry-run: it connects and reports what would
+change. With scp, sshp prints the command and connects. A pull
+fails when the remote file is missing. A push fails when the
+remote directory is missing.
+
+examples:
+  sshp -n file.txt
+  sshp -p -n -r logs/
+""",
+    "dest": """
+usage: sshp -p -d <directory> <remote-file> ...
+       sshp --pull --dest <directory> <remote-file> ...
+
+Local target for --pull. The default is the current directory (.).
+Push ignores this flag. The path is passed to scp or rsync as given.
+
+examples:
+  sshp -p -d ./downloads remote.txt
+  sshp --pull --dest /tmp/out -r logs/
+""",
+    "verbose": """
+usage: sshp -v <file> ...
+       sshp -p -v <remote-file> ...
+
+Print the scp or rsync command, and pass -v through to it.
+When -v and -q are both set, the transfer runs verbose.
+
+examples:
+  sshp -v file.txt
+  sshp -p -v remote.txt
+""",
+    "quiet": """
+usage: sshp -q <file> ...
+       sshp -p -q <remote-file> ...
+
+Summary only. scp and rsync run with -q, so they omit their own
+progress. quiet_mode in the config file does the same without -q.
+When -v and -q are both set, the transfer runs verbose.
+
+examples:
+  sshp -q file.txt
+  sshp -p -q remote.txt
+""",
+}
+
+
+def _remember_topic(topics, seen, name):
+    if name not in seen:
+        seen.add(name)
+        topics.append(name)
+
+
+def _scan_help_topics(argv):
+    """Collect help and topic flags, in argv order.
+
+    `-dh` is a destination named h, the same reading argparse uses, so it
+    is not a help request. `-ph` is pull plus help.
+    """
+    help_requested = False
+    topics = []
+    seen = set()
+    index = 0
+    count = len(argv)
+    while index < count:
+        token = argv[index]
+        if token == "--":
+            break
+        if token in ("-h", "--help"):
+            help_requested = True
+            index += 1
+            continue
+        if token.startswith("--"):
+            name, separator, _value = token.partition("=")
+            topic = LONG_TOPICS.get(name)
+            if topic:
+                _remember_topic(topics, seen, topic)
+            if topic == "dest" and separator == "":
+                nxt = argv[index + 1] if index + 1 < count else None
+                if nxt is not None and not nxt.startswith("-"):
+                    index += 2
+                    continue
+            index += 1
+            continue
+        if token.startswith("-") and len(token) > 1:
+            exact = EXACT_SHORT.get(token)
+            if exact:
+                _remember_topic(topics, seen, exact)
+                index += 1
+                continue
+            body = token[1:]
+            cursor = 0
+            while cursor < len(body):
+                char = body[cursor]
+                if char == "h":
+                    help_requested = True
+                    cursor += 1
+                    continue
+                topic = SINGLE_SHORT.get(char)
+                if topic is None:
+                    break
+                _remember_topic(topics, seen, topic)
+                cursor += 1
+                if topic == "dest":
+                    # Remaining characters are the destination value.
+                    if cursor < len(body):
+                        break
+                    nxt = argv[index + 1] if index + 1 < count else None
+                    if nxt is not None and not nxt.startswith("-"):
+                        index += 1
+                    break
+            index += 1
+            continue
+        index += 1
+    return help_requested, topics
+
+
+def topic_help_request(argv):
+    """Return (topic, other primaries) when -h is combined with a flag.
+
+    `sshp -h` alone returns (None, []) so argparse can print the full page.
+    A primary flag wins over a modifier: `sshp -p -r -h` is pull help.
+    """
+    help_requested, topics = _scan_help_topics(argv)
+    if not help_requested or not topics:
+        return None, []
+    primaries = [name for name in topics if name in PRIMARY_TOPICS]
+    if primaries:
+        return primaries[0], primaries[1:]
+    return topics[0], []
+
+
+def print_topic_help(topic, extras):
+    print(TOPIC_HELP[topic].strip())
+    if extras:
+        print()
+        print("Also requested:")
+        for name in extras:
+            flag = TOPIC_FLAG[name]
+            print(f"  sshp {flag} -h")
+    print()
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="SSH File Push Tool - Push and pull files to/from a remote device",
@@ -506,7 +1016,15 @@ examples:
   sshp --pull remote.txt          # pull a file from the remote
   sshp -r dir/                    # push or pull a directory
   sshp --test                     # test the connection
+  sshp -p -h                      # help for one flag (-l -h, -s -h, ...)
 """,
+        add_help=False,
+    )
+    parser.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        help="This page, or help for one other flag (sshp -p -h)",
     )
     parser.add_argument("files", nargs="*", help="Files to push or pull")
 
@@ -531,7 +1049,7 @@ examples:
     opt_group.add_argument("--dest", "-d", default=".", help="Destination for pulled files")
     opt_group.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     opt_group.add_argument("--quiet", "-q", action="store_true", help="Quiet mode (summary only)")
-    opt_group.add_argument("--version", action="version", version="sshp 4.0.1")
+    opt_group.add_argument("--version", action="version", version=f"sshp {VERSION}")
     return parser
 
 
@@ -542,6 +1060,12 @@ def main(argv=None):
                 stream.reconfigure(line_buffering=True)
             except (OSError, ValueError):
                 pass
+    if argv is None:
+        argv = sys.argv[1:]
+    topic, extras = topic_help_request(argv)
+    if topic:
+        print_topic_help(topic, extras)
+        return 0
     args = build_parser().parse_args(argv)
     config, source, path = load_config()
     if args.quiet and config is not None:
@@ -579,7 +1103,7 @@ def main(argv=None):
     elif args.config:
         show_config(config, source, path)
         ok = True
-    elif args.pull and args.files:
+    elif args.pull:
         ok = pull_files(
             config,
             args.files,

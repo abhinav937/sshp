@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="4.0.1"
+VERSION="4.0.2"
 RAW_URL="https://raw.githubusercontent.com/abhinav937/sshp/main/sshp"
 INSTALL_PATH="$HOME/.local/bin/sshp"
 
