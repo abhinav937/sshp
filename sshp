@@ -1,0 +1,608 @@
+#!/usr/bin/env python3
+"""Push and pull files over SSH. Same commands and config as sshp 3.x."""
+
+import argparse
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+VERSION = "4.0.0"
+LOCAL_NAME = ".sshp_config.json"
+GLOBAL_PATH = Path.home() / ".sshp_config.json"
+HOST_RE = re.compile(
+    r"^([A-Za-z0-9_-]+@)?([A-Za-z0-9.-]+|\d{1,3}(?:\.\d{1,3}){3})$"
+)
+UNSAFE_PATH = set(";|&$`(){}<>\n\r")
+
+
+def load_config():
+    """Local .sshp_config.json wins, then ~/.sshp_config.json."""
+    candidates = (
+        (Path.cwd() / LOCAL_NAME, "local"),
+        (GLOBAL_PATH, "global"),
+    )
+    for path, source in candidates:
+        if not path.is_file():
+            continue
+        try:
+            with path.open(encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict):
+            return data, source, path
+    return None, None, None
+
+
+def save_config(config, save_global=False):
+    path = GLOBAL_PATH if save_global else Path.cwd() / LOCAL_NAME
+    path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    kind = "global" if save_global else "local"
+    print(f"Configuration saved to {path} ({kind})")
+    return True
+
+
+def valid_hostname(hostname):
+    return bool(HOST_RE.match(hostname))
+
+
+def parse_port(value):
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        return None
+    if 1 <= port <= 65535:
+        return port
+    return None
+
+
+def valid_path(path):
+    return not any(char in path for char in UNSAFE_PATH)
+
+
+def port_of(config):
+    return parse_port(config.get("port", 22)) or 22
+
+
+def ask(prompt, default=None):
+    shown = prompt if default in (None, "") else f"{prompt} [{default}]"
+    value = input(f"{shown}: ").strip()
+    if value:
+        return value
+    return "" if default is None else str(default)
+
+
+def default_key_path(config):
+    if config.get("key_path"):
+        return config["key_path"]
+    ssh_dir = Path.home() / ".ssh"
+    for name in ("id_ed25519", "id_rsa", "id_ecdsa"):
+        if (ssh_dir / name).is_file():
+            return f"~/.ssh/{name}"
+    return "~/.ssh/id_rsa"
+
+
+def copy_ssh_key(config):
+    """Install the public key with ssh-copy-id. Never deletes an existing key."""
+    key_path = os.path.expanduser(config["key_path"])
+    public_path = key_path + ".pub"
+    os.makedirs(os.path.dirname(key_path), mode=0o700, exist_ok=True)
+    if not os.path.exists(key_path):
+        print(f"No key at {key_path}. Generating an ed25519 key.")
+        result = subprocess.run(
+            ["ssh-keygen", "-t", "ed25519", "-f", key_path, "-N", ""]
+        )
+        if result.returncode != 0:
+            print("Key generation failed. Run ssh-keygen, then ssh-copy-id.")
+            return False
+    if not os.path.exists(public_path):
+        print(f"Public key not found at {public_path}.")
+        return False
+    print(f"Copying key to {config['hostname']}. Enter the remote password if prompted.")
+    result = subprocess.run(
+        [
+            "ssh-copy-id",
+            "-p",
+            str(port_of(config)),
+            "-i",
+            public_path,
+            config["hostname"],
+        ]
+    )
+    if result.returncode == 0:
+        print("Key copied.")
+        return True
+    print("Key copy failed. You can run ssh-copy-id yourself.")
+    return False
+
+
+def setup_config(existing=None, force=None):
+    """Ask for host, port, and remote directory. force is 'global' or 'local'."""
+    config = dict(existing or {})
+    print("SSHp setup")
+    if existing:
+        print("Press Enter to keep the current value.")
+
+    while True:
+        hostname = ask("Remote host (user@host)", config.get("hostname"))
+        if hostname and valid_hostname(hostname):
+            config["hostname"] = hostname
+            break
+        print("Use user@host or a hostname/IP.")
+
+    while True:
+        port = parse_port(ask("SSH port", str(config.get("port", 22))))
+        if port:
+            config["port"] = port
+            break
+        print("Port must be 1-65535.")
+
+    while True:
+        remote_dir = ask("Remote directory", config.get("remote_dir", "~"))
+        if remote_dir and valid_path(remote_dir):
+            config["remote_dir"] = remote_dir
+            break
+        print("That path contains a character sshp will not put in a remote command.")
+
+    if shutil.which("rsync"):
+        method = ask(
+            "Transfer method (scp/rsync)", config.get("transfer_method", "rsync")
+        ).lower()
+        config["transfer_method"] = method if method in ("scp", "rsync") else "rsync"
+    else:
+        config["transfer_method"] = "scp"
+        print("rsync not found, using scp.")
+
+    auth = ask("Authentication (key/password)", config.get("auth_method", "key")).lower()
+    config["auth_method"] = auth if auth in ("key", "password") else "key"
+    config.setdefault("quiet_mode", False)
+
+    if config["auth_method"] == "key":
+        config["key_path"] = ask("SSH key path", default_key_path(config))
+        copy = input("Copy SSH key to the remote with ssh-copy-id? (Y/n): ").strip().lower()
+        if copy in ("", "y", "yes"):
+            copy_ssh_key(config)
+
+    if force == "global":
+        save_global = True
+    elif force == "local":
+        save_global = False
+    else:
+        choice = ask("Save as global config, used from every directory? (y/N)", "n")
+        save_global = choice.lower() in ("y", "yes")
+
+    if save_config(config, save_global=save_global):
+        print("Configuration setup complete.")
+        return True
+    return False
+
+
+def show_config(config, source, path):
+    if not config:
+        print("No SSH configuration found.")
+        print("Run with --setup to create configuration.")
+        print("")
+        print("Config locations:")
+        print(f"  Local:  ./{LOCAL_NAME}")
+        print(f"  Global: {GLOBAL_PATH}")
+        return
+
+    print(f"Current SSH configuration ({source}: {path}):")
+    print(f"  Hostname: {config.get('hostname', 'Not set')}")
+    print(f"  Port: {config.get('port', 'Not set')}")
+    print(f"  Remote Directory: {config.get('remote_dir', 'Not set')}")
+    print(f"  Transfer Method: {config.get('transfer_method', 'scp')}")
+    print(f"  Quiet Mode: {'Yes' if config.get('quiet_mode') else 'No'}")
+    print(f"  Auth Method: {config.get('auth_method', 'Not set')}")
+    if config.get("auth_method") == "key":
+        print(f"  SSH Key: {config.get('key_path', 'Not set')}")
+    print(f"  Rsync Available: {'Yes' if shutil.which('rsync') else 'No'}")
+
+    local_path = Path.cwd() / LOCAL_NAME
+    if source == "global" and local_path.exists():
+        print("\n  Note: a local config also exists and takes priority when it is valid.")
+    elif source == "local" and GLOBAL_PATH.exists():
+        print(f"\n  Note: a global config also exists at {GLOBAL_PATH}")
+
+
+def edit_config(config, source, path):
+    if not config:
+        print("No configuration found. Run: sshp --setup")
+        return False
+    show_config(config, source, path)
+    answer = input("Edit configuration? (y/N): ").strip().lower()
+    if answer == "y":
+        return setup_config(existing=config)
+    return True
+
+
+def require_config(config):
+    if not config or not config.get("hostname"):
+        print("No configuration found. Run: sshp --setup")
+        return False
+    return True
+
+
+def use_rsync(config):
+    return config.get("transfer_method", "scp") == "rsync" and shutil.which("rsync") is not None
+
+
+def remote_spec(hostname, path):
+    """user@host:path, with spaces in the path escaped for scp and rsync."""
+    return hostname + ":" + path.replace(" ", r"\ ")
+
+
+def ssh_argv(config, remote_command):
+    command = ["ssh", "-p", str(port_of(config))]
+    if config.get("auth_method") == "key" and config.get("key_path"):
+        command.extend(["-i", os.path.expanduser(config["key_path"])])
+    command.extend([config["hostname"], remote_command])
+    return command
+
+
+def build_transfer(config, sources, dest, recursive, compress, verbose, dry_run, quiet):
+    """Return (argv, pretend). pretend is true when scp dry-run must not connect."""
+    quiet = quiet and not verbose
+    if use_rsync(config):
+        command = ["rsync", "-a"]
+        if quiet:
+            command.append("-q")
+        else:
+            command.append("--info=progress2")
+        if verbose:
+            command.append("-v")
+        if compress:
+            command.append("-z")
+        if dry_run:
+            command.append("--dry-run")
+        ssh = ["ssh", "-p", str(port_of(config))]
+        if config.get("auth_method") == "key" and config.get("key_path"):
+            ssh.extend(["-i", os.path.expanduser(config["key_path"])])
+        command.extend(["-e", " ".join(shlex.quote(part) for part in ssh)])
+        command.extend(sources)
+        command.append(dest)
+        return command, False
+
+    command = ["scp"]
+    if quiet:
+        command.append("-q")
+    if verbose:
+        command.append("-v")
+    if compress:
+        command.append("-C")
+    if recursive:
+        command.append("-r")
+    command.extend(["-P", str(port_of(config))])
+    if config.get("auth_method") == "key" and config.get("key_path"):
+        command.extend(["-i", os.path.expanduser(config["key_path"])])
+    command.extend(sources)
+    command.append(dest)
+    return command, dry_run
+
+
+def transfer(config, sources, dest, recursive, compress, verbose, dry_run, quiet, timeout=None):
+    command, pretend = build_transfer(
+        config, sources, dest, recursive, compress, verbose, dry_run, quiet
+    )
+    if verbose or dry_run:
+        print("Running: " + " ".join(shlex.quote(part) for part in command))
+    if pretend:
+        return True, 0.0
+    start = time.time()
+    try:
+        result = subprocess.run(command, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print("Transfer timed out.")
+        return False, time.time() - start
+    except OSError as exc:
+        print(f"Error: {exc}")
+        return False, time.time() - start
+    return result.returncode == 0, time.time() - start
+
+
+def push_files(config, files, verbose, compress, recursive, dry_run, quiet):
+    if not require_config(config):
+        return False
+    if not files:
+        print("No files specified to push.")
+        return False
+
+    valid = []
+    for path in files:
+        if os.path.exists(path):
+            valid.append(path)
+        else:
+            print(f"Warning: File not found: {path}")
+    if not valid:
+        print("No valid files to push.")
+        return False
+    if any(os.path.isdir(path) for path in valid) and not recursive:
+        print("Warning: Directories found. Use --recursive (-r) to push directories.")
+        recursive = True
+
+    remote_dir = config.get("remote_dir", "~")
+    dest = remote_spec(config["hostname"], remote_dir if remote_dir.endswith("/") else remote_dir + "/")
+    if not use_rsync(config):
+        dest = remote_spec(config["hostname"], remote_dir)
+
+    prefix = "[DRY RUN] " if dry_run else ""
+    compressed = " (compressed)" if compress else ""
+    print(f"{prefix}Pushing {len(valid)} file(s) to remote device{compressed}...")
+    ok, seconds = transfer(
+        config, valid, dest, recursive, compress, verbose, dry_run, quiet
+    )
+    if dry_run and ok:
+        print("[DRY RUN] Transfer simulation complete.")
+    elif ok:
+        print(f"Files pushed successfully ({len(valid)} file(s) in {seconds:.1f}s).")
+    else:
+        print("Failed to push files.")
+    return ok
+
+
+def pull_files(config, remote_files, local_dest, verbose, compress, recursive, dry_run, quiet):
+    if not require_config(config):
+        return False
+    if not remote_files:
+        print("No remote files specified to pull.")
+        return False
+
+    remote_dir = config.get("remote_dir", "~")
+    sources = []
+    for remote_file in remote_files:
+        if not remote_file.startswith("/") and not remote_file.startswith("~"):
+            remote_file = remote_dir.rstrip("/") + "/" + remote_file
+        sources.append(remote_spec(config["hostname"], remote_file))
+
+    prefix = "[DRY RUN] " if dry_run else ""
+    compressed = " (compressed)" if compress else ""
+    print(f"{prefix}Pulling {len(sources)} file(s) from remote device{compressed}...")
+    ok, seconds = transfer(
+        config, sources, local_dest, recursive, compress, verbose, dry_run, quiet
+    )
+    if dry_run and ok:
+        print("[DRY RUN] Transfer simulation complete.")
+    elif ok:
+        print(f"Files pulled successfully ({len(sources)} file(s) in {seconds:.1f}s).")
+    else:
+        print("Failed to pull files.")
+    return ok
+
+
+def collect_files(recursive):
+    root = Path.cwd()
+    found = []
+    if recursive:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [name for name in dirnames if not name.startswith(".")]
+            for name in filenames:
+                if not name.startswith("."):
+                    found.append(str(Path(dirpath) / name))
+    else:
+        for name in os.listdir(root):
+            path = root / name
+            if not name.startswith(".") and path.is_file():
+                found.append(name)
+    if not found:
+        print("No non-hidden files found in current directory.")
+    else:
+        print(f"Found {len(found)} non-hidden files to push.")
+    return found
+
+
+def test_connection(config):
+    if not require_config(config):
+        return False
+    print("Testing SSH connection...")
+    try:
+        result = subprocess.run(ssh_argv(config, "exit"), timeout=15)
+    except subprocess.TimeoutExpired:
+        print("SSH connection timed out.")
+        return False
+    except OSError as exc:
+        print(f"SSH connection error: {exc}")
+        return False
+    if result.returncode == 0:
+        print("SSH connection successful.")
+        return True
+    print("SSH connection failed.")
+    return False
+
+
+def list_remote_files(config):
+    if not require_config(config):
+        return False
+    remote_dir = config.get("remote_dir", "~")
+    print("Listing remote files...")
+    print("Remote files:")
+    print("-------------")
+    try:
+        result = subprocess.run(
+            ssh_argv(config, "ls -la " + shlex.quote(remote_dir)),
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        print("Failed to list remote files.")
+        return False
+    except OSError as exc:
+        print(f"Error listing remote files: {exc}")
+        return False
+    if result.returncode != 0:
+        print("Failed to list remote files.")
+        return False
+    return True
+
+
+def speed_test(config, size_mb=10):
+    if not require_config(config):
+        return False
+    print(f"Running speed test with {size_mb}MB test file...")
+    fd, path = tempfile.mkstemp(prefix="sshp-speed-", suffix=".tmp")
+    os.close(fd)
+    try:
+        remaining = size_mb * 1024 * 1024
+        chunk = b"\0" * (1024 * 1024)
+        with open(path, "wb") as handle:
+            while remaining:
+                piece = chunk if remaining >= len(chunk) else b"\0" * remaining
+                handle.write(piece)
+                remaining -= len(piece)
+        remote_dir = config.get("remote_dir", "~").rstrip("/")
+        remote_path = remote_dir + "/speed_test.tmp"
+        dest = remote_spec(config["hostname"], remote_path)
+        print("Starting file transfer speed test...")
+        ok, seconds = transfer(
+            config, [path], dest, False, False, False, False, False, timeout=300
+        )
+        if not ok:
+            print("Speed test failed.")
+            return False
+        seconds = seconds if seconds > 0 else 0.001
+        actual_mb = os.path.getsize(path) / (1024 * 1024)
+        print("")
+        print("Speed Test Results:")
+        print("==================")
+        print(f"File size: {actual_mb:.2f} MB")
+        print(f"Transfer time: {seconds:.2f} seconds")
+        print(f"Transfer speed: {actual_mb / seconds:.2f} MB/s")
+        print(f"Transfer speed: {(actual_mb * 8) / seconds:.2f} Mbps")
+        print(f"Method: {'rsync' if use_rsync(config) else 'scp'}")
+        try:
+            subprocess.run(
+                ssh_argv(config, "rm -f " + shlex.quote(remote_path)),
+                capture_output=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        return True
+    except OSError as exc:
+        print(f"Speed test error: {exc}")
+        return False
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        description="SSH File Push Tool - Push and pull files to/from a remote device",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        usage="sshp [options] [files ...]",
+        epilog="""
+examples:
+  sshp --setup                    # setup SSH configuration
+  sshp file.txt                   # push a file
+  sshp --all                      # push non-hidden files in this directory
+  sshp --pull remote.txt          # pull a file from the remote
+  sshp -r dir/                    # push or pull a directory
+  sshp --test                     # test the connection
+""",
+    )
+    parser.add_argument("files", nargs="*", help="Files to push or pull")
+
+    config_group = parser.add_argument_group("Configuration")
+    config_group.add_argument("--setup", "-s", action="store_true", help="Setup SSH configuration")
+    config_group.add_argument("--global-setup", "-gs", action="store_true", help="Setup global config (~/.sshp_config.json)")
+    config_group.add_argument("--local-setup", "-ls", action="store_true", help="Setup local config (./.sshp_config.json)")
+    config_group.add_argument("--edit", "-e", action="store_true", help="Edit existing configuration")
+    config_group.add_argument("--config", "-c", action="store_true", help="Show current configuration")
+
+    action_group = parser.add_argument_group("Actions")
+    action_group.add_argument("--pull", "-p", action="store_true", help="Pull files from remote")
+    action_group.add_argument("--list", "-l", action="store_true", help="List remote files")
+    action_group.add_argument("--test", "-t", action="store_true", help="Test SSH connection")
+    action_group.add_argument("--speed-test", "-st", action="store_true", help="Test transfer speed")
+
+    opt_group = parser.add_argument_group("Transfer Options")
+    opt_group.add_argument("--all", "-a", action="store_true", help="Push all non-hidden files")
+    opt_group.add_argument("--recursive", "-r", action="store_true", help="Recursive transfer")
+    opt_group.add_argument("--compress", "-z", action="store_true", help="Enable compression")
+    opt_group.add_argument("--dry-run", "-n", action="store_true", help="Dry run (simulation)")
+    opt_group.add_argument("--dest", "-d", default=".", help="Destination for pulled files")
+    opt_group.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    opt_group.add_argument("--quiet", "-q", action="store_true", help="Quiet mode (summary only)")
+    opt_group.add_argument("--version", action="version", version="sshp 4.0.0")
+    return parser
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    config, source, path = load_config()
+    if args.quiet and config is not None:
+        config["quiet_mode"] = True
+    quiet = bool(args.quiet or (config or {}).get("quiet_mode"))
+
+    if args.global_setup:
+        ok = setup_config(force="global")
+    elif args.local_setup:
+        ok = setup_config(force="local")
+    elif args.setup:
+        ok = setup_config()
+    elif args.edit:
+        ok = edit_config(config, source, path)
+    elif args.all:
+        files = collect_files(args.recursive)
+        if not files:
+            ok = True
+        else:
+            ok = push_files(
+                config,
+                files,
+                args.verbose,
+                args.compress,
+                args.recursive,
+                args.dry_run,
+                quiet,
+            )
+    elif args.list:
+        ok = list_remote_files(config)
+    elif args.test:
+        ok = test_connection(config)
+    elif args.speed_test:
+        ok = speed_test(config)
+    elif args.config:
+        show_config(config, source, path)
+        ok = True
+    elif args.pull and args.files:
+        ok = pull_files(
+            config,
+            args.files,
+            args.dest,
+            args.verbose,
+            args.compress,
+            args.recursive,
+            args.dry_run,
+            quiet,
+        )
+    elif args.files:
+        ok = push_files(
+            config,
+            args.files,
+            args.verbose,
+            args.compress,
+            args.recursive,
+            args.dry_run,
+            quiet,
+        )
+    else:
+        build_parser().print_help()
+        ok = True
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (KeyboardInterrupt, EOFError):
+        print("\nInterrupted.")
+        sys.exit(130)

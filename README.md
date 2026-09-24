@@ -2,6 +2,8 @@
 
 A simple, cross-platform tool for pushing and pulling files to/from remote devices via SSH.
 
+Version 4.0.0 keeps the 3.x commands, flags, and config files. Install, update, and uninstall are unchanged.
+
 ## Features
 
 - Self-contained Python script
@@ -17,8 +19,7 @@ A simple, cross-platform tool for pushing and pulling files to/from remote devic
 - **Dry-run mode** to preview transfers
 - Speed testing
 - **Quiet mode** for script-friendly output
-- **Live progress tracking** for transfers
-- **Detailed statistics** (speed, size, duration)
+- **Progress from rsync or scp** during transfers
 - **Graceful interruption** handling
 
 ## Installation
@@ -120,6 +121,8 @@ sshp --verbose file.txt
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--setup` | `-s` | Setup SSH configuration |
+| `--global-setup` | `-gs` | Setup global config (`~/.sshp_config.json`) |
+| `--local-setup` | `-ls` | Setup local config (`./.sshp_config.json`) |
 | `--edit` | `-e` | Edit existing configuration |
 | `--all` | `-a` | Push all non-hidden files |
 | `--pull` | `-p` | Pull files from remote |
@@ -235,6 +238,16 @@ bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manag
 - All `sed` and `stat` commands are cross-platform compatible
 
 ## Version History
+
+### Version 4.0.0
+- Same `install`, `update`, and `uninstall` commands
+- Same flags (`--pull`, `--all`, `--setup`, `--test`, `--speed-test`, and the rest)
+- Same config files: `./.sshp_config.json`, then `~/.sshp_config.json`
+- The tool is a single Python file. The manager only installs, updates, and removes it
+- Transfers use rsync or scp directly, including their own progress output
+- Dry-run with scp previews the command and does not connect
+- SSH key setup no longer deletes an existing key
+- `sshp -q` without a config file no longer crashes
 
 ### Version 3.5.5
 - Added **compression status feedback** ("(compressed)" indicator)
