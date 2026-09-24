@@ -2,7 +2,7 @@
 
 A simple, cross-platform tool for pushing and pulling files to/from remote devices via SSH.
 
-Version 4.0.0 keeps the 3.x commands, flags, and config files. Install, update, and uninstall are unchanged.
+Version 4.0.1 keeps the 3.x commands, flags, and config files. Install, update, and uninstall are unchanged.
 
 ## Features
 
@@ -238,6 +238,9 @@ bash <(curl -s https://raw.githubusercontent.com/abhinav937/sshp/main/sshp-manag
 - All `sed` and `stat` commands are cross-platform compatible
 
 ## Version History
+
+### Version 4.0.1
+- Filenames with spaces pull and push correctly. rsync is given the path unchanged and uses `--secluded-args` so the remote shell does not split it
 
 ### Version 4.0.0
 - Same `install`, `update`, and `uninstall` commands

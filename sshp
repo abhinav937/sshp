@@ -13,7 +13,7 @@ import tempfile
 import time
 from pathlib import Path
 
-VERSION = "4.0.0"
+VERSION = "4.0.1"
 LOCAL_NAME = ".sshp_config.json"
 GLOBAL_PATH = Path.home() / ".sshp_config.json"
 HOST_RE = re.compile(
@@ -235,8 +235,8 @@ def use_rsync(config):
 
 
 def remote_spec(hostname, path):
-    """user@host:path, with spaces in the path escaped for scp and rsync."""
-    return hostname + ":" + path.replace(" ", r"\ ")
+    """user@host:path. The path is one argument, so spaces stay spaces."""
+    return hostname + ":" + path
 
 
 def ssh_argv(config, remote_command):
@@ -251,7 +251,7 @@ def build_transfer(config, sources, dest, recursive, compress, verbose, dry_run,
     """Return (argv, pretend). pretend is true when scp dry-run must not connect."""
     quiet = quiet and not verbose
     if use_rsync(config):
-        command = ["rsync", "-a"]
+        command = ["rsync", "-a", "-s"]
         if quiet:
             command.append("-q")
         else:
@@ -531,11 +531,17 @@ examples:
     opt_group.add_argument("--dest", "-d", default=".", help="Destination for pulled files")
     opt_group.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     opt_group.add_argument("--quiet", "-q", action="store_true", help="Quiet mode (summary only)")
-    opt_group.add_argument("--version", action="version", version="sshp 4.0.0")
+    opt_group.add_argument("--version", action="version", version="sshp 4.0.1")
     return parser
 
 
 def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(line_buffering=True)
+            except (OSError, ValueError):
+                pass
     args = build_parser().parse_args(argv)
     config, source, path = load_config()
     if args.quiet and config is not None:
